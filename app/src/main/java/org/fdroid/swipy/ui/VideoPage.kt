@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -47,6 +48,11 @@ fun VideoPage(
     var showControls by remember(item.uri) { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
 
+    // Seek bar state
+    var durationMs by remember(item.uri) { mutableStateOf(0L) }
+    var positionMs by remember(item.uri) { mutableStateOf(0L) }
+    var isUserSeeking by remember { mutableStateOf(false) }
+
     LaunchedEffect(isActive) {
         if (isActive) {
             player.play()
@@ -54,6 +60,18 @@ fun VideoPage(
         } else {
             player.pause()
             isPlaying = false
+        }
+    }
+
+    // Poll playback position/duration so the seek bar stays in sync.
+    LaunchedEffect(item.uri) {
+        while (true) {
+            if (!isUserSeeking) {
+                val dur = player.duration
+                if (dur > 0) durationMs = dur
+                positionMs = player.currentPosition.coerceIn(0L, if (durationMs > 0) durationMs else Long.MAX_VALUE)
+            }
+            delay(300)
         }
     }
 
@@ -125,6 +143,50 @@ fun VideoPage(
                     onSortChange = onSortChange
                 )
             }
+
+            // Seek bar, pinned to the bottom, no background dimming behind it.
+            if (durationMs > 0) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        formatTime(positionMs),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                    Slider(
+                        value = positionMs.toFloat(),
+                        valueRange = 0f..durationMs.toFloat(),
+                        onValueChange = {
+                            isUserSeeking = true
+                            positionMs = it.toLong()
+                        },
+                        onValueChangeFinished = {
+                            player.seekTo(positionMs)
+                            isUserSeeking = false
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(horizontal = 8.dp)
+                    )
+                    Text(
+                        formatTime(durationMs),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+            }
         }
     }
+}
+
+private fun formatTime(ms: Long): String {
+    val totalSeconds = ms / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return "%d:%02d".format(minutes, seconds)
 }
