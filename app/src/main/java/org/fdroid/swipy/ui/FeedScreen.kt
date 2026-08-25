@@ -19,7 +19,7 @@ import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.MediaType
 import org.fdroid.swipy.data.SortOrder
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FeedScreen(
     items: List<MediaItem>,
