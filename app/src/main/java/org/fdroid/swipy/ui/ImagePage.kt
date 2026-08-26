@@ -16,17 +16,13 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import org.fdroid.swipy.data.MediaItem
-import org.fdroid.swipy.data.SortOrder
 
 @Composable
 fun ImagePage(
     item: MediaItem,
-    onOpenFolderPicker: () -> Unit,
-    onShuffleNow: () -> Unit,
-    onSortChange: (SortOrder) -> Unit
+    onOpenSettings: () -> Unit
 ) {
     var showControls by remember(item.uri) { mutableStateOf(false) }
-    var showSettingsMenu by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
@@ -44,26 +40,15 @@ fun ImagePage(
         )
 
         if (showControls) {
-            Box(
+            IconButton(
+                onClick = onOpenSettings,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(12.dp)
+                    .size(44.dp)
+                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
             ) {
-                IconButton(
-                    onClick = { showSettingsMenu = true },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
-                }
-                SettingsMenu(
-                    expanded = showSettingsMenu,
-                    onDismiss = { showSettingsMenu = false },
-                    onOpenFolderPicker = onOpenFolderPicker,
-                    onShuffleNow = onShuffleNow,
-                    onSortChange = onSortChange
-                )
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
             }
         }
     }

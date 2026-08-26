@@ -21,31 +21,32 @@ import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import org.fdroid.swipy.data.MediaItem
-import org.fdroid.swipy.data.SortOrder
 
 @Composable
 fun VideoPage(
     item: MediaItem,
     isActive: Boolean,
-    onOpenFolderPicker: () -> Unit,
-    onShuffleNow: () -> Unit,
-    onSortChange: (SortOrder) -> Unit
+    loopEnabled: Boolean,
+    onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
 
     val player = remember(item.uri) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(ExoMediaItem.fromUri(item.uri))
-            repeatMode = ExoPlayer.REPEAT_MODE_ONE
+            repeatMode = if (loopEnabled) ExoPlayer.REPEAT_MODE_ONE else ExoPlayer.REPEAT_MODE_OFF
             prepare()
         }
     }
 
-    // Track play/pause state so gestures know what to do.
+    // Keep repeat mode in sync if the user changes the Loop setting mid-playback.
+    LaunchedEffect(loopEnabled) {
+        player.repeatMode = if (loopEnabled) ExoPlayer.REPEAT_MODE_ONE else ExoPlayer.REPEAT_MODE_OFF
+    }
+
     var isPlaying by remember(item.uri) { mutableStateOf(true) }
     // Settings gear + seek bar hidden by default; only appear on single tap.
     var showControls by remember(item.uri) { mutableStateOf(false) }
-    var showSettingsMenu by remember { mutableStateOf(false) }
 
     // Seek bar state
     var durationMs by remember(item.uri) { mutableStateOf(0L) }
@@ -84,7 +85,7 @@ fun VideoPage(
             .pointerInput(item.uri) {
                 detectTapGestures(
                     onPress = {
-                        // Hold to pause, release to resume — only if it was actually playing.
+                        // Hold to pause, release to resume — the only way to pause a video.
                         val wasPlaying = isPlaying
                         if (wasPlaying) {
                             player.pause()
@@ -92,16 +93,6 @@ fun VideoPage(
                         }
                         val released = tryAwaitRelease()
                         if (released && wasPlaying) {
-                            player.play()
-                            isPlaying = true
-                        }
-                    },
-                    onDoubleTap = {
-                        // Persistent pause/resume toggle, independent of the hold gesture above.
-                        if (isPlaying) {
-                            player.pause()
-                            isPlaying = false
-                        } else {
                             player.play()
                             isPlaying = true
                         }
@@ -129,26 +120,15 @@ fun VideoPage(
 
         if (showControls) {
             // No background scrim on purpose — icons float directly over the video.
-            Box(
+            IconButton(
+                onClick = onOpenSettings,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(12.dp)
+                    .size(44.dp)
+                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
             ) {
-                IconButton(
-                    onClick = { showSettingsMenu = true },
-                    modifier = Modifier
-                        .size(44.dp)
-                        .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
-                }
-                SettingsMenu(
-                    expanded = showSettingsMenu,
-                    onDismiss = { showSettingsMenu = false },
-                    onOpenFolderPicker = onOpenFolderPicker,
-                    onShuffleNow = onShuffleNow,
-                    onSortChange = onSortChange
-                )
+                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
             }
 
             // Seek bar, pinned to the bottom, no background dimming behind it.
