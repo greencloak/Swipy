@@ -19,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.ACCENT_COLORS
+import org.fdroid.swipy.data.Orientation
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
 import org.fdroid.swipy.data.ThemeMode
@@ -35,6 +36,8 @@ fun SettingsScreen(
     allFolders: List<String>,
     selectedFolders: Set<String>,
     onFoldersChange: (Set<String>) -> Unit,
+    selectedOrientations: Set<Orientation>,
+    onOrientationsChange: (Set<Orientation>) -> Unit,
     onShuffleNow: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -86,6 +89,9 @@ fun SettingsScreen(
                     )
                 },
                 SettingRow("Sort order") { SortOrderRow(sortOrder, onSortChange) },
+                SettingRow("Filter by shape") {
+                    OrientationFilterRow(selectedOrientations, onOrientationsChange)
+                },
                 SettingRow("Shuffle now") {
                     ClickableSettingRow(
                         label = "Shuffle now",
@@ -263,6 +269,42 @@ private fun SortOrderRow(sortOrder: SortOrder, onSortChange: (SortOrder) -> Unit
             ) {
                 RadioButton(selected = sortOrder == order, onClick = { onSortChange(order) })
                 Text(order.label)
+            }
+        }
+    }
+}
+
+@Composable
+private fun OrientationFilterRow(
+    selected: Set<Orientation>,
+    onChange: (Set<Orientation>) -> Unit
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Filter by shape", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Select any combination. Leave none checked to show everything.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Row(Modifier.padding(top = 8.dp)) {
+            Orientation.entries.forEach { orientation ->
+                val isSelected = orientation in selected
+                Text(
+                    text = orientation.label,
+                    color = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier
+                        .padding(end = 8.dp)
+                        .clickable {
+                            onChange(
+                                if (isSelected) selected - orientation else selected + orientation
+                            )
+                        }
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                            RoundedCornerShape(50)
+                        )
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                )
             }
         }
     }

@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.MediaRepository
+import org.fdroid.swipy.data.Orientation
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
 import org.fdroid.swipy.data.ThemeMode
@@ -117,11 +118,12 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
     var screen by remember { mutableStateOf(Screen.FEED) }
     var sortOrder by remember { mutableStateOf(SortOrder.DATE_NEWEST) }
     var selectedFolders by remember { mutableStateOf(setOf<String>()) }
+    var selectedOrientations by remember { mutableStateOf(setOf<Orientation>()) }
     var refreshKey by remember { mutableIntStateOf(0) }
 
     val allFolders = remember { repository.listFolders() }
-    val items = remember(sortOrder, selectedFolders, refreshKey) {
-        repository.loadMedia(selectedFolders, sortOrder)
+    val items = remember(sortOrder, selectedFolders, selectedOrientations, refreshKey) {
+        repository.loadMedia(selectedFolders, sortOrder, selectedOrientations)
     }
 
     when (screen) {
@@ -137,6 +139,8 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             allFolders = allFolders,
             selectedFolders = selectedFolders,
             onFoldersChange = { selectedFolders = it },
+            selectedOrientations = selectedOrientations,
+            onOrientationsChange = { selectedOrientations = it },
             onShuffleNow = {
                 sortOrder = SortOrder.RANDOM
                 refreshKey++

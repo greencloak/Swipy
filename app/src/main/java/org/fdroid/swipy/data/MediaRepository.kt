@@ -31,12 +31,13 @@ class MediaRepository(private val context: Context) {
     }
 
     /**
-     * Loads media items, optionally filtered to [selectedFolders] (empty set = all folders),
-     * sorted per [sortOrder].
+     * Loads media items, optionally filtered to [selectedFolders] (empty set = all folders)
+     * and [selectedOrientations] (empty set = all shapes), sorted per [sortOrder].
      */
     fun loadMedia(
         selectedFolders: Set<String>,
         sortOrder: SortOrder,
+        selectedOrientations: Set<Orientation> = emptySet(),
         includeImages: Boolean = true,
         includeVideos: Boolean = true
     ): List<MediaItem> {
@@ -44,10 +45,14 @@ class MediaRepository(private val context: Context) {
         if (includeImages) items.addAll(queryMedia(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaType.IMAGE))
         if (includeVideos) items.addAll(queryMedia(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, MediaType.VIDEO))
 
-        val filtered = if (selectedFolders.isEmpty()) {
+        var filtered = if (selectedFolders.isEmpty()) {
             items
         } else {
             items.filter { it.bucketName in selectedFolders }
+        }
+
+        if (selectedOrientations.isNotEmpty()) {
+            filtered = filtered.filter { it.orientation in selectedOrientations }
         }
 
         return when (sortOrder) {
@@ -64,13 +69,17 @@ class MediaRepository(private val context: Context) {
             MediaStore.MediaColumns._ID,
             MediaStore.MediaColumns.DISPLAY_NAME,
             MediaStore.MediaColumns.BUCKET_DISPLAY_NAME,
-            MediaStore.MediaColumns.DATE_ADDED
+            MediaStore.MediaColumns.DATE_ADDED,
+            MediaStore.MediaColumns.WIDTH,
+            MediaStore.MediaColumns.HEIGHT
         )
         context.contentResolver.query(collection, projection, null, null, null)?.use { cursor ->
             val idCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
             val nameCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DISPLAY_NAME)
             val bucketCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.BUCKET_DISPLAY_NAME)
             val dateCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_ADDED)
+            val widthCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.WIDTH)
+            val heightCol = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.HEIGHT)
 
             while (cursor.moveToNext()) {
                 val id = cursor.getLong(idCol)
@@ -82,7 +91,9 @@ class MediaRepository(private val context: Context) {
                         type = type,
                         displayName = cursor.getString(nameCol) ?: "",
                         bucketName = cursor.getString(bucketCol) ?: "Unknown",
-                        dateAdded = cursor.getLong(dateCol)
+                        dateAdded = cursor.getLong(dateCol),
+                        width = cursor.getInt(widthCol),
+                        height = cursor.getInt(heightCol)
                     )
                 )
             }
