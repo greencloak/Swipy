@@ -2,18 +2,17 @@ package org.fdroid.swipy.ui
 
 import android.view.ViewGroup
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -42,9 +41,9 @@ fun VideoPage(
         }
     }
 
-    // Track play/pause state so our custom icon reflects reality.
+    // Track play/pause state so gestures know what to do.
     var isPlaying by remember(item.uri) { mutableStateOf(true) }
-    // Controls hidden by default; only appear when the user taps the video.
+    // Settings gear + seek bar hidden by default; only appear on single tap.
     var showControls by remember(item.uri) { mutableStateOf(false) }
     var showSettingsMenu by remember { mutableStateOf(false) }
 
@@ -82,10 +81,36 @@ fun VideoPage(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clickable(
-                indication = null,
-                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
-            ) { showControls = !showControls }
+            .pointerInput(item.uri) {
+                detectTapGestures(
+                    onPress = {
+                        // Hold to pause, release to resume — only if it was actually playing.
+                        val wasPlaying = isPlaying
+                        if (wasPlaying) {
+                            player.pause()
+                            isPlaying = false
+                        }
+                        val released = tryAwaitRelease()
+                        if (released && wasPlaying) {
+                            player.play()
+                            isPlaying = true
+                        }
+                    },
+                    onDoubleTap = {
+                        // Persistent pause/resume toggle, independent of the hold gesture above.
+                        if (isPlaying) {
+                            player.pause()
+                            isPlaying = false
+                        } else {
+                            player.play()
+                            isPlaying = true
+                        }
+                    },
+                    onTap = {
+                        showControls = !showControls
+                    }
+                )
+            }
     ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -104,24 +129,6 @@ fun VideoPage(
 
         if (showControls) {
             // No background scrim on purpose — icons float directly over the video.
-            IconButton(
-                onClick = {
-                    if (isPlaying) player.pause() else player.play()
-                    isPlaying = !isPlaying
-                },
-                modifier = Modifier
-                    .align(Alignment.Center)
-                    .size(72.dp)
-                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
-            ) {
-                Icon(
-                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (isPlaying) "Pause" else "Play",
-                    tint = Color.White,
-                    modifier = Modifier.size(40.dp)
-                )
-            }
-
             Box(
                 modifier = Modifier
                     .align(Alignment.TopEnd)
