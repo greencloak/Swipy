@@ -18,15 +18,20 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.delay
 import androidx.media3.common.MediaItem as ExoMediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import org.fdroid.swipy.data.MediaItem
+import org.fdroid.swipy.data.PlaybackPositionStore
+import org.fdroid.swipy.data.PlaybackStartMode
 
 @Composable
 fun VideoPage(
     item: MediaItem,
     isActive: Boolean,
     loopEnabled: Boolean,
+    playbackStartMode: PlaybackStartMode,
+    positionStore: PlaybackPositionStore,
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -63,6 +68,38 @@ fun VideoPage(
         }
     }
 
+    // Apply "start midway" / "remember position" exactly once, as soon as the
+    // player knows its duration (needed for the midway calculation).
+    var hasAppliedInitialSeek by remember(item.uri) { mutableStateOf(false) }
+    DisposableEffect(item.uri) {
+        val listener = object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == Player.STATE_READY && !hasAppliedInitialSeek) {
+                    hasAppliedInitialSeek = true
+                    when (playbackStartMode) {
+                        PlaybackStartMode.START_MIDWAY -> {
+                            val dur = player.duration
+                            if (dur > 0) player.seekTo(dur / 2)
+                        }
+                        PlaybackStartMode.REMEMBER_POSITION -> {
+                            val saved = positionStore.getPosition(item.id)
+                            if (saved > 0) player.seekTo(saved)
+                        }
+                        PlaybackStartMode.DEFAULT -> {}
+                    }
+                }
+            }
+        }
+        player.addListener(listener)
+        onDispose {
+            if (playbackStartMode == PlaybackStartMode.REMEMBER_POSITION) {
+                positionStore.savePosition(item.id, player.currentPosition)
+            }
+            player.removeListener(listener)
+            player.release()
+        }
+    }
+
     // Poll playback position/duration so the seek bar stays in sync.
     LaunchedEffect(item.uri) {
         while (true) {
@@ -73,10 +110,6 @@ fun VideoPage(
             }
             delay(300)
         }
-    }
-
-    DisposableEffect(item.uri) {
-        onDispose { player.release() }
     }
 
     Box(
@@ -91,8 +124,12 @@ fun VideoPage(
                             player.pause()
                             isPlaying = false
                         }
-                        val released = tryAwaitRelease()
-                        if (released && wasPlaying) {
+                        // Always resume once the touch interaction ends, whether it was
+                        // a clean release OR got cancelled (e.g. the gesture turned into
+                        // a swipe to the next video). Previously we only resumed on a
+                        // clean release, which left the video stuck paused after swiping.
+                        tryAwaitRelease()
+                        if (wasPlaying) {
                             player.play()
                             isPlaying = true
                         }

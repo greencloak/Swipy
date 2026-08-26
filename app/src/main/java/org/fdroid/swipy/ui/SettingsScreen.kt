@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.ACCENT_COLORS
 import org.fdroid.swipy.data.Orientation
+import org.fdroid.swipy.data.PlaybackStartMode
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
 import org.fdroid.swipy.data.ThemeMode
@@ -55,7 +56,8 @@ fun SettingsScreen(
                         checked = settings.loopEnabled,
                         onCheckedChange = { settings.updateLoopEnabled(it) }
                     )
-                }
+                },
+                SettingRow("Playback start") { PlaybackStartRow(settings) }
             )
         ),
         SettingSection(
@@ -307,5 +309,37 @@ private fun OrientationFilterRow(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun PlaybackStartRow(settings: SettingsRepository) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text("Playback start", style = MaterialTheme.typography.bodyLarge)
+        Text(
+            "Only one of these can be on at a time.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        SettingSwitchRow(
+            label = "Start midway",
+            description = "Begin each video partway through the first time you swipe onto it",
+            checked = settings.playbackStartMode == PlaybackStartMode.START_MIDWAY,
+            onCheckedChange = {
+                settings.updatePlaybackStartMode(
+                    if (it) PlaybackStartMode.START_MIDWAY else PlaybackStartMode.DEFAULT
+                )
+            }
+        )
+        SettingSwitchRow(
+            label = "Remember last position",
+            description = "Resume each video where you left off last time",
+            checked = settings.playbackStartMode == PlaybackStartMode.REMEMBER_POSITION,
+            onCheckedChange = {
+                settings.updatePlaybackStartMode(
+                    if (it) PlaybackStartMode.REMEMBER_POSITION else PlaybackStartMode.DEFAULT
+                )
+            }
+        )
     }
 }

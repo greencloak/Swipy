@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.MediaRepository
 import org.fdroid.swipy.data.Orientation
+import org.fdroid.swipy.data.PlaybackPositionStore
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
 import org.fdroid.swipy.data.ThemeMode
@@ -120,6 +121,8 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
     var selectedFolders by remember { mutableStateOf(setOf<String>()) }
     var selectedOrientations by remember { mutableStateOf(setOf<Orientation>()) }
     var refreshKey by remember { mutableIntStateOf(0) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val positionStore = remember { PlaybackPositionStore(context) }
 
     val allFolders = remember { repository.listFolders() }
     val items = remember(sortOrder, selectedFolders, selectedOrientations, refreshKey) {
@@ -130,6 +133,8 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
         Screen.FEED -> FeedScreen(
             items = items,
             loopEnabled = settings.loopEnabled,
+            playbackStartMode = settings.playbackStartMode,
+            positionStore = positionStore,
             onOpenSettings = { screen = Screen.SETTINGS }
         )
         Screen.SETTINGS -> SettingsScreen(

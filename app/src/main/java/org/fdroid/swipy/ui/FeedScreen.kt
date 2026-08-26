@@ -13,12 +13,16 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.MediaType
+import org.fdroid.swipy.data.PlaybackPositionStore
+import org.fdroid.swipy.data.PlaybackStartMode
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FeedScreen(
     items: List<MediaItem>,
     loopEnabled: Boolean,
+    playbackStartMode: PlaybackStartMode,
+    positionStore: PlaybackPositionStore,
     onOpenSettings: () -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { items.size })
@@ -46,6 +50,8 @@ fun FeedScreen(
                         item = item,
                         isActive = isActive,
                         loopEnabled = loopEnabled,
+                        playbackStartMode = playbackStartMode,
+                        positionStore = positionStore,
                         onOpenSettings = onOpenSettings
                     )
                 }
