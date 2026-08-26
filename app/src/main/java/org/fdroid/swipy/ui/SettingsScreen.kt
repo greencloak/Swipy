@@ -50,7 +50,7 @@ fun SettingsScreen(
                         label = "Loop videos",
                         description = "Restart automatically when a video ends",
                         checked = settings.loopEnabled,
-                        onCheckedChange = { settings.setLoopEnabled(it) }
+                        onCheckedChange = { settings.updateLoopEnabled(it) }
                     )
                 }
             )
@@ -63,7 +63,7 @@ fun SettingsScreen(
                         label = "Force maximum brightness",
                         description = "Keep the screen at full brightness while Swipy is open",
                         checked = settings.forceMaxBrightness,
-                        onCheckedChange = { settings.setForceMaxBrightness(it) }
+                        onCheckedChange = { settings.updateForceMaxBrightness(it) }
                     )
                 }
             )
@@ -213,7 +213,7 @@ private fun ThemeModeRow(settings: SettingsRepository) {
                     color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier
                         .padding(end = 8.dp)
-                        .clickable { settings.setThemeMode(mode) }
+                        .clickable { settings.updateThemeMode(mode) }
                         .background(
                             if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                             RoundedCornerShape(50)
@@ -242,7 +242,7 @@ private fun AccentColorRow(settings: SettingsRepository) {
                             color = MaterialTheme.colorScheme.onBackground,
                             shape = CircleShape
                         )
-                        .clickable { settings.setAccentColor(colorLong) }
+                        .clickable { settings.updateAccentColor(colorLong) }
                 )
             }
         }

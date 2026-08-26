@@ -41,22 +41,22 @@ class SettingsRepository(context: Context) {
     var accentColor by mutableStateOf(prefs.getLong(KEY_ACCENT, ACCENT_COLORS[0]))
         private set
 
-    fun setLoopEnabled(value: Boolean) {
+    fun updateLoopEnabled(value: Boolean) {
         loopEnabled = value
         prefs.edit().putBoolean(KEY_LOOP, value).apply()
     }
 
-    fun setForceMaxBrightness(value: Boolean) {
+    fun updateForceMaxBrightness(value: Boolean) {
         forceMaxBrightness = value
         prefs.edit().putBoolean(KEY_BRIGHTNESS, value).apply()
     }
 
-    fun setThemeMode(mode: ThemeMode) {
+    fun updateThemeMode(mode: ThemeMode) {
         themeMode = mode
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
     }
 
-    fun setAccentColor(color: Long) {
+    fun updateAccentColor(color: Long) {
         accentColor = color
         prefs.edit().putLong(KEY_ACCENT, color).apply()
     }
