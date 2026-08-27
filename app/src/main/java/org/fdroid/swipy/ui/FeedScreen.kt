@@ -20,15 +20,6 @@ import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.MediaType
 import org.fdroid.swipy.data.PlaybackPositionStore
 
-/**
- * VerticalPager needs a bounded page count, so true infinite scrolling isn't
- * directly supported. The standard workaround: use a huge virtual page count
- * and map each virtual page to a real item via modulo. With Int.MAX_VALUE
- * pages and the start centered in the middle, you'd need to swipe billions
- * of times to hit either edge — effectively infinite for any real session.
- */
-private const val VIRTUAL_PAGE_COUNT = Int.MAX_VALUE
-
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FeedScreen(
@@ -48,38 +39,23 @@ fun FeedScreen(
     onShuffleAndRandomStart: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val itemCount = items.size
-
-    val startVirtualPage = remember(items) {
-        if (itemCount == 0) {
-            0
-        } else {
-            val startIndex = items.indexOfFirst { it.id == initialItemId }.let { if (it >= 0) it else 0 }
-            val middle = VIRTUAL_PAGE_COUNT / 2
-            middle - (middle % itemCount) + startIndex
-        }
+    val startPage = remember(items) {
+        items.indexOfFirst { it.id == initialItemId }.let { if (it >= 0) it else 0 }
     }
-    val pagerState = rememberPagerState(
-        initialPage = startVirtualPage,
-        pageCount = { if (itemCount == 0) 0 else VIRTUAL_PAGE_COUNT }
-    )
+    val pagerState = rememberPagerState(initialPage = startPage, pageCount = { items.size })
     val coroutineScope = rememberCoroutineScope()
 
     LaunchedEffect(pagerState.currentPage, items) {
-        if (itemCount > 0) {
-            onCurrentItemChanged(items[pagerState.currentPage.mod(itemCount)].id)
+        if (items.isNotEmpty()) {
+            onCurrentItemChanged(items[pagerState.currentPage].id)
         }
     }
 
-    // One-shot "jump here right now" signal from the in-feed shuffle button —
-    // jump to the nearest virtual page (relative to where we currently are)
-    // whose modulo lands on the target item.
     LaunchedEffect(jumpToItemId, items) {
-        if (jumpToItemId != null && itemCount > 0) {
+        if (jumpToItemId != null) {
             val index = items.indexOfFirst { it.id == jumpToItemId }
             if (index >= 0) {
-                val base = pagerState.currentPage - (pagerState.currentPage.mod(itemCount))
-                pagerState.scrollToPage(base + index)
+                pagerState.scrollToPage(index)
             }
             onJumpHandled()
         }
@@ -96,10 +72,9 @@ fun FeedScreen(
             VerticalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
-            ) { virtualPage ->
-                val realIndex = virtualPage.mod(itemCount)
-                val item = items[realIndex]
-                val isActive = pagerState.currentPage == virtualPage
+            ) { page ->
+                val item = items[page]
+                val isActive = pagerState.currentPage == page
                 when (item.type) {
                     MediaType.IMAGE -> ImagePage(
                         item = item,
@@ -120,8 +95,10 @@ fun FeedScreen(
                         onRandomStartConsumed = onRandomStartConsumed,
                         onShuffleAndRandomStart = onShuffleAndRandomStart,
                         onVideoEnded = {
-                            coroutineScope.launch {
-                                pagerState.animateScrollToPage(virtualPage + 1)
+                            if (page < items.lastIndex) {
+                                coroutineScope.launch {
+                                    pagerState.animateScrollToPage(page + 1)
+                                }
                             }
                         },
                         onOpenSettings = onOpenSettings
