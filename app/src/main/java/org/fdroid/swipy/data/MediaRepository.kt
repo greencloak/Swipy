@@ -38,6 +38,7 @@ class MediaRepository(private val context: Context) {
         selectedFolders: Set<String>,
         sortOrder: SortOrder,
         selectedOrientations: Set<Orientation> = emptySet(),
+        shuffleSeed: Long = System.currentTimeMillis(),
         includeImages: Boolean = true,
         includeVideos: Boolean = true
     ): List<MediaItem> {
@@ -59,7 +60,7 @@ class MediaRepository(private val context: Context) {
             SortOrder.DATE_NEWEST -> filtered.sortedByDescending { it.dateAdded }
             SortOrder.DATE_OLDEST -> filtered.sortedBy { it.dateAdded }
             SortOrder.NAME_AZ -> filtered.sortedBy { it.displayName.lowercase() }
-            SortOrder.RANDOM -> filtered.shuffled()
+            SortOrder.RANDOM -> filtered.shuffled(kotlin.random.Random(shuffleSeed))
         }
     }
 

@@ -13,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import org.fdroid.swipy.data.LikedMediaStore
 import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.MediaType
 import org.fdroid.swipy.data.PlaybackPositionStore
@@ -25,6 +26,7 @@ fun FeedScreen(
     loopEnabled: Boolean,
     playbackStartMode: PlaybackStartMode,
     positionStore: PlaybackPositionStore,
+    likedStore: LikedMediaStore,
     initialItemId: Long,
     onCurrentItemChanged: (Long) -> Unit,
     onOpenSettings: () -> Unit
@@ -60,6 +62,7 @@ fun FeedScreen(
                 when (item.type) {
                     MediaType.IMAGE -> ImagePage(
                         item = item,
+                        likedStore = likedStore,
                         onOpenSettings = onOpenSettings
                     )
                     MediaType.VIDEO -> VideoPage(
@@ -68,6 +71,7 @@ fun FeedScreen(
                         loopEnabled = loopEnabled,
                         playbackStartMode = playbackStartMode,
                         positionStore = positionStore,
+                        likedStore = likedStore,
                         onOpenSettings = onOpenSettings
                     )
                 }

@@ -14,15 +14,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import org.fdroid.swipy.data.LikedMediaStore
 import org.fdroid.swipy.data.MediaRepository
 import org.fdroid.swipy.data.PlaybackPositionStore
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
 import org.fdroid.swipy.data.ThemeMode
 import org.fdroid.swipy.ui.FeedScreen
+import org.fdroid.swipy.ui.LikedGalleryScreen
 import org.fdroid.swipy.ui.SettingsScreen
 
-private enum class Screen { FEED, SETTINGS }
+private enum class Screen { FEED, SETTINGS, LIKED_GALLERY }
 
 class MainActivity : ComponentActivity() {
 
@@ -115,18 +117,28 @@ private fun PermissionRequestScreen(onRequest: () -> Unit) {
 
 @Composable
 private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) {
-    // Only `screen` (which page you're on) and `refreshKey` (a one-off shuffle
-    // trigger) stay as plain in-memory state — everything that should survive
-    // the app being backgrounded (filters, sort, current video) now lives in
-    // `settings`, which is backed by SharedPreferences.
+    // Only `screen` (which page you're on) stays as plain in-memory state —
+    // everything that should survive the app being backgrounded (filters,
+    // sort, shuffle order, current video, likes, remembered positions) lives
+    // in persistent stores backed by SharedPreferences.
     var screen by remember { mutableStateOf(Screen.FEED) }
-    var refreshKey by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val positionStore = remember { PlaybackPositionStore(context) }
+    val likedStore = remember { LikedMediaStore(context) }
 
     val allFolders = remember { repository.listFolders() }
-    val items = remember(settings.sortOrder, settings.selectedFolders, settings.selectedOrientations, refreshKey) {
-        repository.loadMedia(settings.selectedFolders, settings.sortOrder, settings.selectedOrientations)
+    val items = remember(
+        settings.sortOrder,
+        settings.selectedFolders,
+        settings.selectedOrientations,
+        settings.shuffleSeed
+    ) {
+        repository.loadMedia(
+            selectedFolders = settings.selectedFolders,
+            sortOrder = settings.sortOrder,
+            selectedOrientations = settings.selectedOrientations,
+            shuffleSeed = settings.shuffleSeed
+        )
     }
 
     when (screen) {
@@ -135,19 +147,43 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             loopEnabled = settings.loopEnabled,
             playbackStartMode = settings.playbackStartMode,
             positionStore = positionStore,
+            likedStore = likedStore,
             initialItemId = settings.lastViewedMediaId,
             onCurrentItemChanged = { settings.updateLastViewedMediaId(it) },
             onOpenSettings = { screen = Screen.SETTINGS }
         )
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
+            positionStore = positionStore,
+            likedStore = likedStore,
             allFolders = allFolders,
             onShuffleNow = {
+                // A fresh seed generates a genuinely new shuffle order; reusing
+                // the same seed (elsewhere) is what keeps that order stable
+                // across app backgrounding / split-screen resizing.
+                settings.updateShuffleSeed(System.currentTimeMillis())
                 settings.updateSortOrder(SortOrder.RANDOM)
-                refreshKey++
                 screen = Screen.FEED
             },
+            onOpenLikedGallery = { screen = Screen.LIKED_GALLERY },
             onBack = { screen = Screen.FEED }
         )
+        Screen.LIKED_GALLERY -> {
+            // Liked items are looked up against the full, unfiltered library
+            // so they always show here even if current folder/shape filters
+            // would otherwise hide them from the main feed.
+            val allItems = remember {
+                repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
+            }
+            val likedItems = allItems.filter { likedStore.isLiked(it.id) }
+            LikedGalleryScreen(
+                likedItems = likedItems,
+                onItemSelected = { item ->
+                    settings.updateLastViewedMediaId(item.id)
+                    screen = Screen.FEED
+                },
+                onBack = { screen = Screen.SETTINGS }
+            )
+        }
     }
 }

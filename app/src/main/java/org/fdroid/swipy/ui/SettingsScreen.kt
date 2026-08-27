@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
@@ -19,7 +20,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.ACCENT_COLORS
+import org.fdroid.swipy.data.LikedMediaStore
 import org.fdroid.swipy.data.Orientation
+import org.fdroid.swipy.data.PlaybackPositionStore
 import org.fdroid.swipy.data.PlaybackStartMode
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
@@ -32,12 +35,16 @@ private data class SettingSection(val title: String, val rows: List<SettingRow>)
 @Composable
 fun SettingsScreen(
     settings: SettingsRepository,
+    positionStore: PlaybackPositionStore,
+    likedStore: LikedMediaStore,
     allFolders: List<String>,
     onShuffleNow: () -> Unit,
+    onOpenLikedGallery: () -> Unit,
     onBack: () -> Unit
 ) {
     var query by remember { mutableStateOf("") }
     var showFolderPicker by remember { mutableStateOf(false) }
+    var showResetPositionsConfirm by remember { mutableStateOf(false) }
 
     val sections = listOf(
         SettingSection(
@@ -51,7 +58,14 @@ fun SettingsScreen(
                         onCheckedChange = { settings.updateLoopEnabled(it) }
                     )
                 },
-                SettingRow("Playback start") { PlaybackStartRow(settings) }
+                SettingRow("Playback start") { PlaybackStartRow(settings) },
+                SettingRow("Reset remembered positions") {
+                    ClickableSettingRow(
+                        label = "Reset remembered positions",
+                        description = "Clear every saved resume point across the whole library",
+                        onClick = { showResetPositionsConfirm = true }
+                    )
+                }
             )
         ),
         SettingSection(
@@ -72,6 +86,19 @@ fun SettingsScreen(
             rows = listOf(
                 SettingRow("Theme") { ThemeModeRow(settings) },
                 SettingRow("Accent color") { AccentColorRow(settings) }
+            )
+        ),
+        SettingSection(
+            title = "Liked",
+            rows = listOf(
+                SettingRow("View liked media") {
+                    ClickableSettingRow(
+                        label = "View liked media",
+                        description = "${likedStore.likedIds.size} liked — browse them in a gallery",
+                        icon = Icons.Default.Favorite,
+                        onClick = onOpenLikedGallery
+                    )
+                }
             )
         ),
         SettingSection(
@@ -153,6 +180,23 @@ fun SettingsScreen(
                 showFolderPicker = false
             },
             onDismiss = { showFolderPicker = false }
+        )
+    }
+
+    if (showResetPositionsConfirm) {
+        AlertDialog(
+            onDismissRequest = { showResetPositionsConfirm = false },
+            title = { Text("Reset remembered positions?") },
+            text = { Text("This clears every saved resume point across your whole library. This can't be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    positionStore.clearAll()
+                    showResetPositionsConfirm = false
+                }) { Text("Reset") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetPositionsConfirm = false }) { Text("Cancel") }
+            }
         )
     }
 }

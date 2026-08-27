@@ -81,6 +81,17 @@ class SettingsRepository(context: Context) {
     var lastViewedMediaId by mutableStateOf(prefs.getLong(KEY_LAST_VIEWED, -1L))
         private set
 
+    /**
+     * Seed for "Shuffle" sort order. Without this, every time Android
+     * recreates the activity (e.g. resizing a Samsung split-screen pane)
+     * the RANDOM order would reshuffle from scratch — looking exactly like
+     * the whole library reloaded, even though nothing else changed. Reusing
+     * the same seed keeps the order stable until the user explicitly taps
+     * "Shuffle now" again, which generates a fresh seed.
+     */
+    var shuffleSeed by mutableStateOf(prefs.getLong(KEY_SHUFFLE_SEED, System.currentTimeMillis()))
+        private set
+
     fun updateLoopEnabled(value: Boolean) {
         loopEnabled = value
         prefs.edit().putBoolean(KEY_LOOP, value).apply()
@@ -126,6 +137,11 @@ class SettingsRepository(context: Context) {
         prefs.edit().putLong(KEY_LAST_VIEWED, id).apply()
     }
 
+    fun updateShuffleSeed(seed: Long) {
+        shuffleSeed = seed
+        prefs.edit().putLong(KEY_SHUFFLE_SEED, seed).apply()
+    }
+
     companion object {
         private const val KEY_LOOP = "loop_enabled"
         private const val KEY_BRIGHTNESS = "force_max_brightness"
@@ -136,5 +152,6 @@ class SettingsRepository(context: Context) {
         private const val KEY_SORT_ORDER = "sort_order"
         private const val KEY_ORIENTATIONS = "selected_orientations"
         private const val KEY_LAST_VIEWED = "last_viewed_media_id"
+        private const val KEY_SHUFFLE_SEED = "shuffle_seed"
     }
 }

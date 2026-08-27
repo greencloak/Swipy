@@ -11,4 +11,9 @@ class PlaybackPositionStore(context: Context) {
     fun savePosition(mediaId: Long, positionMs: Long) {
         prefs.edit().putLong(mediaId.toString(), positionMs).apply()
     }
+
+    /** Wipes every remembered position across the whole library. */
+    fun clearAll() {
+        prefs.edit().clear().apply()
+    }
 }

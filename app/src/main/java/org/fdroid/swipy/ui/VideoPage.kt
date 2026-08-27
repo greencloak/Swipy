@@ -1,13 +1,12 @@
 package org.fdroid.swipy.ui
 
 import android.view.ViewGroup
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +20,7 @@ import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
+import org.fdroid.swipy.data.LikedMediaStore
 import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.PlaybackPositionStore
 import org.fdroid.swipy.data.PlaybackStartMode
@@ -32,6 +32,7 @@ fun VideoPage(
     loopEnabled: Boolean,
     playbackStartMode: PlaybackStartMode,
     positionStore: PlaybackPositionStore,
+    likedStore: LikedMediaStore,
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -44,16 +45,13 @@ fun VideoPage(
         }
     }
 
-    // Keep repeat mode in sync if the user changes the Loop setting mid-playback.
     LaunchedEffect(loopEnabled) {
         player.repeatMode = if (loopEnabled) ExoPlayer.REPEAT_MODE_ONE else ExoPlayer.REPEAT_MODE_OFF
     }
 
     var isPlaying by remember(item.uri) { mutableStateOf(true) }
-    // Settings gear + seek bar hidden by default; only appear on single tap.
     var showControls by remember(item.uri) { mutableStateOf(false) }
 
-    // Seek bar state
     var durationMs by remember(item.uri) { mutableStateOf(0L) }
     var positionMs by remember(item.uri) { mutableStateOf(0L) }
     var isUserSeeking by remember { mutableStateOf(false) }
@@ -68,8 +66,6 @@ fun VideoPage(
         }
     }
 
-    // Apply "start midway" / "remember position" exactly once, as soon as the
-    // player knows its duration (needed for the midway calculation).
     var hasAppliedInitialSeek by remember(item.uri) { mutableStateOf(false) }
     DisposableEffect(item.uri) {
         val listener = object : Player.Listener {
@@ -100,7 +96,6 @@ fun VideoPage(
         }
     }
 
-    // Poll playback position/duration so the seek bar stays in sync.
     LaunchedEffect(item.uri) {
         while (true) {
             if (!isUserSeeking) {
@@ -118,16 +113,13 @@ fun VideoPage(
             .pointerInput(item.uri) {
                 detectTapGestures(
                     onPress = {
-                        // Hold to pause, release to resume — the only way to pause a video.
                         val wasPlaying = isPlaying
                         if (wasPlaying) {
                             player.pause()
                             isPlaying = false
                         }
-                        // Always resume once the touch interaction ends, whether it was
-                        // a clean release OR got cancelled (e.g. the gesture turned into
-                        // a swipe to the next video). Previously we only resumed on a
-                        // clean release, which left the video stuck paused after swiping.
+                        // Always resume once the touch ends, whether released cleanly
+                        // or the gesture turned into a swipe to the next video.
                         tryAwaitRelease()
                         if (wasPlaying) {
                             player.play()
@@ -144,7 +136,6 @@ fun VideoPage(
             modifier = Modifier.fillMaxSize(),
             factory = {
                 PlayerView(context).apply {
-                    // Disable ExoPlayer's built-in controller entirely; we draw our own.
                     useController = false
                     this.player = player
                     layoutParams = ViewGroup.LayoutParams(
@@ -156,61 +147,49 @@ fun VideoPage(
         )
 
         if (showControls) {
-            // No background scrim on purpose — icons float directly over the video.
-            IconButton(
+            GlassIconButton(
+                icon = Icons.Default.Settings,
+                contentDescription = "Settings",
                 onClick = onOpenSettings,
+                modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
+            )
+
+            val isLiked = likedStore.isLiked(item.id)
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(12.dp)
-                    .size(44.dp)
-                    .background(Color.Black.copy(alpha = 0.35f), CircleShape)
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
             ) {
-                Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
+                GlassIconButton(
+                    icon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (isLiked) "Unlike" else "Like",
+                    tint = if (isLiked) Color(0xFFE0245E) else Color.White,
+                    onClick = { likedStore.toggle(item.id) }
+                )
             }
 
-            // Seek bar, pinned to the bottom, no background dimming behind it.
             if (durationMs > 0) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .padding(horizontal = 12.dp, vertical = 8.dp)
                 ) {
-                    Text(
-                        formatTime(positionMs),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall
-                    )
-                    Slider(
-                        value = positionMs.toFloat(),
-                        valueRange = 0f..durationMs.toFloat(),
-                        onValueChange = {
+                    GlassSeekBar(
+                        positionMs = positionMs,
+                        durationMs = durationMs,
+                        onSeekChange = {
                             isUserSeeking = true
-                            positionMs = it.toLong()
+                            positionMs = it
                         },
-                        onValueChangeFinished = {
-                            player.seekTo(positionMs)
+                        onSeekFinished = {
+                            player.seekTo(it)
                             isUserSeeking = false
-                        },
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 8.dp)
-                    )
-                    Text(
-                        formatTime(durationMs),
-                        color = Color.White,
-                        style = MaterialTheme.typography.labelSmall
+                        }
                     )
                 }
             }
         }
     }
-}
-
-private fun formatTime(ms: Long): String {
-    val totalSeconds = ms / 1000
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%d:%02d".format(minutes, seconds)
 }
