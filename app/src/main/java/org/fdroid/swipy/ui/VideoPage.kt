@@ -1,12 +1,6 @@
 package org.fdroid.swipy.ui
 
 import android.view.ViewGroup
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -41,10 +35,6 @@ import org.fdroid.swipy.data.PlaybackPositionStore
  *  tap (to open the overlay) never pauses the video at all. */
 private const val HOLD_TO_PAUSE_THRESHOLD_MS = 150L
 
-/** How long after a single tap we wait to see if a second tap follows,
- *  before committing to "single tap" behavior (open the overlay). */
-private const val DOUBLE_TAP_WINDOW_MS = 250L
-
 @Composable
 fun VideoPage(
     item: MediaItem,
@@ -77,16 +67,6 @@ fun VideoPage(
 
     var isPlaying by remember(item.uri) { mutableStateOf(true) }
     var showControls by remember(item.uri) { mutableStateOf(false) }
-    var showHeartBurst by remember { mutableStateOf(false) }
-    var heartBurstTrigger by remember { mutableStateOf(0) }
-
-    LaunchedEffect(heartBurstTrigger) {
-        if (heartBurstTrigger > 0) {
-            showHeartBurst = true
-            delay(650)
-            showHeartBurst = false
-        }
-    }
 
     var durationMs by remember(item.uri) { mutableStateOf(0L) }
     var positionMs by remember(item.uri) { mutableStateOf(0L) }
@@ -200,22 +180,7 @@ fun VideoPage(
                     }
 
                     when (outcome) {
-                        "tap" -> {
-                            // Wait briefly for a possible second tap (double-tap
-                            // to like) before committing to "single tap opens
-                            // the overlay".
-                            val gotSecondTap = try {
-                                withTimeout(DOUBLE_TAP_WINDOW_MS) { awaitSecondTapDown() }
-                            } catch (e: TimeoutCancellationException) {
-                                false
-                            }
-                            if (gotSecondTap) {
-                                likedStore.toggle(item.id)
-                                heartBurstTrigger++
-                            } else {
-                                showControls = !showControls
-                            }
-                        }
+                        "tap" -> showControls = !showControls
                         "swipe", "consumed" -> { /* let the pager / seek bar handle it entirely */ }
                         "hold" -> {
                             // Query the player directly rather than trusting our
@@ -251,20 +216,6 @@ fun VideoPage(
                 }
             }
         )
-
-        AnimatedVisibility(
-            visible = showHeartBurst,
-            enter = scaleIn(animationSpec = tween(200)) + fadeIn(animationSpec = tween(150)),
-            exit = fadeOut(animationSpec = tween(300)),
-            modifier = Modifier.align(Alignment.Center)
-        ) {
-            Icon(
-                Icons.Default.Favorite,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.size(110.dp)
-            )
-        }
 
         if (showControls) {
             GlassIconButton(
@@ -348,17 +299,5 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.awa
             return true
         }
         id = change.id
-    }
-}
-
-/** Watches for a brand-new finger touching down (a second tap) and consumes it. */
-private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.awaitSecondTapDown(): Boolean {
-    while (true) {
-        val event = awaitPointerEvent()
-        val newDown = event.changes.firstOrNull { it.pressed && !it.previousPressed }
-        if (newDown != null) {
-            newDown.consume()
-            return true
-        }
     }
 }
