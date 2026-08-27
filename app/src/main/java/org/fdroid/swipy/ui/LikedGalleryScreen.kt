@@ -106,21 +106,23 @@ private fun VideoThumbnail(item: MediaItem) {
         }
     }
 
-    val bmp = thumbnail
-    if (bmp != null) {
-        Image(
-            bitmap = bmp.asImageBitmap(),
-            contentDescription = item.displayName,
-            contentScale = ContentScale.Crop,
-            modifier = Modifier.fillMaxSize()
+    Box(Modifier.fillMaxSize()) {
+        val bmp = thumbnail
+        if (bmp != null) {
+            Image(
+                bitmap = bmp.asImageBitmap(),
+                contentDescription = item.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+        // Play icon always shown on top so videos are recognizable even before
+        // (or if) the thumbnail loads — matches the pattern used elsewhere.
+        Icon(
+            Icons.Default.PlayArrow,
+            contentDescription = "Video",
+            tint = Color.White,
+            modifier = Modifier.align(Alignment.Center).size(28.dp)
         )
     }
-    // Play icon always shown on top so videos are recognizable even before
-    // (or if) the thumbnail loads — matches the pattern used elsewhere.
-    Icon(
-        Icons.Default.PlayArrow,
-        contentDescription = "Video",
-        tint = Color.White,
-        modifier = Modifier.align(Alignment.Center).size(28.dp)
-    )
 }
