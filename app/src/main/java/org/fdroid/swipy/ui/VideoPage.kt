@@ -132,35 +132,68 @@ fun VideoPage(
         modifier = Modifier
             .fillMaxSize()
             .pointerInput(item.uri) {
+                val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    var pausedForHold = false
                     val wasPlayingAtStart = isPlaying
+                    val startTime = System.currentTimeMillis()
+                    var pointerId = down.id
 
-                    // null = held past the threshold without releasing or being
-                    // claimed elsewhere; true = genuine quick release (a tap);
-                    // false = the gesture was consumed by something else (the
-                    // dedicated bottom scrub zone claiming a drag) — in that
-                    // case we do nothing at all, since the seek bar is handling it.
-                    val outcome: Boolean? = try {
-                        withTimeout(HOLD_TO_PAUSE_THRESHOLD_MS) {
-                            awaitReleaseOrConsumption(down.id)
+                    // Race three outcomes at once: a quick release (tap), the
+                    // finger moving beyond touch slop (a swipe — bail out and
+                    // let the pager handle it entirely), or the threshold
+                    // elapsing with no release/movement (a genuine hold).
+                    // Previously this only raced on time, so a fast swipe that
+                    // happened to finish within the threshold got misread as
+                    // a tap and toggled the overlay mid-swipe, fighting the
+                    // pager. Checking distance fixes that.
+                    var outcome = "hold"
+                    while (true) {
+                        val elapsed = System.currentTimeMillis() - startTime
+                        val remaining = HOLD_TO_PAUSE_THRESHOLD_MS - elapsed
+                        if (remaining <= 0) {
+                            outcome = "hold"
+                            break
                         }
-                    } catch (e: TimeoutCancellationException) {
-                        null
+                        val event = try {
+                            withTimeout(remaining) { awaitPointerEvent() }
+                        } catch (e: TimeoutCancellationException) {
+                            outcome = "hold"
+                            break
+                        }
+                        val change = event.changes.firstOrNull { it.id == pointerId }
+                        if (change == null) {
+                            outcome = "swipe" // pointer tracking lost — don't guess, let it go
+                            break
+                        }
+                        if (change.isConsumed) {
+                            outcome = "consumed"
+                            break
+                        }
+                        if (!change.pressed) {
+                            change.consume()
+                            outcome = "tap"
+                            break
+                        }
+                        val dx = change.position.x - down.position.x
+                        val dy = change.position.y - down.position.y
+                        if (dx * dx + dy * dy > slop * slop) {
+                            outcome = "swipe"
+                            break
+                        }
+                        pointerId = change.id
                     }
 
                     when (outcome) {
-                        true -> showControls = !showControls
-                        false -> { /* claimed by the seek bar's scrub zone — ignore */ }
-                        null -> {
+                        "tap" -> showControls = !showControls
+                        "swipe", "consumed" -> { /* let the pager / seek bar handle it entirely */ }
+                        "hold" -> {
                             if (wasPlayingAtStart) {
                                 player.pause()
                                 isPlaying = false
-                                pausedForHold = true
                             }
-                            awaitReleaseOrConsumption(down.id)
-                            if (pausedForHold) {
+                            awaitReleaseOrConsumption(pointerId)
+                            if (wasPlayingAtStart) {
                                 player.play()
                                 isPlaying = true
                             }
