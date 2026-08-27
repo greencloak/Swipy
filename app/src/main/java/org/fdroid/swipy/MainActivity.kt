@@ -117,14 +117,17 @@ private fun PermissionRequestScreen(onRequest: () -> Unit) {
 
 @Composable
 private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) {
-    // Only `screen` (which page you're on) stays as plain in-memory state —
-    // everything that should survive the app being backgrounded (filters,
-    // sort, shuffle order, current video, likes, remembered positions) lives
-    // in persistent stores backed by SharedPreferences.
     var screen by remember { mutableStateOf(Screen.FEED) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val positionStore = remember { PlaybackPositionStore(context) }
     val likedStore = remember { LikedMediaStore(context) }
+
+    // One-shot signals for the in-feed "shuffle and jump to a random point"
+    // button: which item to scroll to right now, and which item (once it
+    // loads) should start playback from a random position instead of the
+    // usual midway/remember-position logic.
+    var jumpToItemId by remember { mutableStateOf<Long?>(null) }
+    var randomStartItemId by remember { mutableStateOf<Long?>(null) }
 
     val allFolders = remember { repository.listFolders() }
     val items = remember(
@@ -141,26 +144,52 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
         )
     }
 
+    val onShuffleAndRandomStart: () -> Unit = {
+        // Computed synchronously (not via the `items` remember above, which
+        // only updates after recomposition) so we can pick a random target
+        // from the *new* order immediately.
+        val newSeed = System.currentTimeMillis()
+        val newItems = repository.loadMedia(
+            selectedFolders = settings.selectedFolders,
+            sortOrder = SortOrder.RANDOM,
+            selectedOrientations = settings.selectedOrientations,
+            shuffleSeed = newSeed
+        )
+        settings.updateShuffleSeed(newSeed)
+        settings.updateSortOrder(SortOrder.RANDOM)
+        val target = newItems.randomOrNull()
+        if (target != null) {
+            jumpToItemId = target.id
+            randomStartItemId = target.id
+            settings.updateLastViewedMediaId(target.id)
+        }
+    }
+
     when (screen) {
         Screen.FEED -> FeedScreen(
             items = items,
             loopEnabled = settings.loopEnabled,
-            playbackStartMode = settings.playbackStartMode,
+            startMidwayEnabled = settings.startMidwayEnabled,
+            rememberPositionEnabled = settings.rememberPositionEnabled,
+            autoAdvanceEnabled = settings.autoAdvanceEnabled,
             positionStore = positionStore,
             likedStore = likedStore,
             initialItemId = settings.lastViewedMediaId,
             onCurrentItemChanged = { settings.updateLastViewedMediaId(it) },
+            jumpToItemId = jumpToItemId,
+            onJumpHandled = { jumpToItemId = null },
+            randomStartItemId = randomStartItemId,
+            onRandomStartConsumed = { randomStartItemId = null },
+            onShuffleAndRandomStart = onShuffleAndRandomStart,
             onOpenSettings = { screen = Screen.SETTINGS }
         )
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
             positionStore = positionStore,
             likedStore = likedStore,
+            repository = repository,
             allFolders = allFolders,
             onShuffleNow = {
-                // A fresh seed generates a genuinely new shuffle order; reusing
-                // the same seed (elsewhere) is what keeps that order stable
-                // across app backgrounding / split-screen resizing.
                 settings.updateShuffleSeed(System.currentTimeMillis())
                 settings.updateSortOrder(SortOrder.RANDOM)
                 screen = Screen.FEED
@@ -169,9 +198,6 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             onBack = { screen = Screen.FEED }
         )
         Screen.LIKED_GALLERY -> {
-            // Liked items are looked up against the full, unfiltered library
-            // so they always show here even if current folder/shape filters
-            // would otherwise hide them from the main feed.
             val allItems = remember {
                 repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
             }

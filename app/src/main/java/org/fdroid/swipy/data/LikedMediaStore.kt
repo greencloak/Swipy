@@ -23,6 +23,18 @@ class LikedMediaStore(context: Context) {
         prefs.edit().putStringSet(KEY_LIKED, likedIds.map { it.toString() }.toSet()).apply()
     }
 
+    /** Serializes liked media as JSON, given the matching display info for readability. */
+    fun exportJson(nameLookup: (Long) -> String?): String {
+        val array = org.json.JSONArray()
+        likedIds.forEach { id ->
+            val obj = org.json.JSONObject()
+            obj.put("id", id)
+            nameLookup(id)?.let { obj.put("name", it) }
+            array.put(obj)
+        }
+        return array.toString(2)
+    }
+
     companion object {
         private const val KEY_LIKED = "liked_ids"
     }

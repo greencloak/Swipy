@@ -1,5 +1,8 @@
 package org.fdroid.swipy.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -10,7 +13,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.*
@@ -18,12 +24,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.ACCENT_COLORS
 import org.fdroid.swipy.data.LikedMediaStore
+import org.fdroid.swipy.data.MediaRepository
 import org.fdroid.swipy.data.Orientation
 import org.fdroid.swipy.data.PlaybackPositionStore
-import org.fdroid.swipy.data.PlaybackStartMode
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
 import org.fdroid.swipy.data.ThemeMode
@@ -37,14 +44,38 @@ fun SettingsScreen(
     settings: SettingsRepository,
     positionStore: PlaybackPositionStore,
     likedStore: LikedMediaStore,
+    repository: MediaRepository,
     allFolders: List<String>,
     onShuffleNow: () -> Unit,
     onOpenLikedGallery: () -> Unit,
     onBack: () -> Unit
 ) {
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     var showFolderPicker by remember { mutableStateOf(false) }
     var showResetPositionsConfirm by remember { mutableStateOf(false) }
+
+    val exportSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        uri?.let {
+            context.contentResolver.openOutputStream(it)?.use { stream ->
+                stream.write(settings.exportSettingsJson().toByteArray())
+            }
+        }
+    }
+
+    val exportLikedLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        uri?.let {
+            val allItems = repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
+            val nameLookup: (Long) -> String? = { id -> allItems.firstOrNull { it.id == id }?.displayName }
+            context.contentResolver.openOutputStream(it)?.use { stream ->
+                stream.write(likedStore.exportJson(nameLookup).toByteArray())
+            }
+        }
+    }
 
     val sections = listOf(
         SettingSection(
@@ -56,6 +87,14 @@ fun SettingsScreen(
                         description = "Restart automatically when a video ends",
                         checked = settings.loopEnabled,
                         onCheckedChange = { settings.updateLoopEnabled(it) }
+                    )
+                },
+                SettingRow("Auto-advance to next video") {
+                    SettingSwitchRow(
+                        label = "Auto-advance to next video",
+                        description = "Automatically swipe to the next video once one finishes",
+                        checked = settings.autoAdvanceEnabled,
+                        onCheckedChange = { settings.updateAutoAdvanceEnabled(it) }
                     )
                 },
                 SettingRow("Playback start") { PlaybackStartRow(settings) },
@@ -98,6 +137,14 @@ fun SettingsScreen(
                         icon = Icons.Default.Favorite,
                         onClick = onOpenLikedGallery
                     )
+                },
+                SettingRow("Export liked media") {
+                    ClickableSettingRow(
+                        label = "Export liked media",
+                        description = "Save a record of everything you've liked to a file",
+                        icon = Icons.Default.Download,
+                        onClick = { exportLikedLauncher.launch("swipy-liked.json") }
+                    )
                 }
             )
         ),
@@ -121,6 +168,35 @@ fun SettingsScreen(
                         description = "Re-randomize the feed immediately",
                         icon = Icons.Default.Shuffle,
                         onClick = onShuffleNow
+                    )
+                }
+            )
+        ),
+        SettingSection(
+            title = "Backup",
+            rows = listOf(
+                SettingRow("Save current settings as default") {
+                    ClickableSettingRow(
+                        label = "Save current settings as default",
+                        description = "Remember this setup so you can restore it later",
+                        icon = Icons.Default.Save,
+                        onClick = { settings.saveCurrentAsDefault() }
+                    )
+                },
+                SettingRow("Restore my default settings") {
+                    ClickableSettingRow(
+                        label = "Restore my default settings",
+                        description = "Reapply whatever you last saved as default",
+                        icon = Icons.Default.Restore,
+                        onClick = { settings.restoreDefault() }
+                    )
+                },
+                SettingRow("Export settings") {
+                    ClickableSettingRow(
+                        label = "Export settings",
+                        description = "Save your current settings to a file",
+                        icon = Icons.Default.Download,
+                        onClick = { exportSettingsLauncher.launch("swipy-settings.json") }
                     )
                 }
             )
@@ -355,29 +431,21 @@ private fun PlaybackStartRow(settings: SettingsRepository) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text("Playback start", style = MaterialTheme.typography.bodyLarge)
         Text(
-            "Only one of these can be on at a time.",
+            "Any combination is fine — if both are on, a remembered position wins when one exists, otherwise it starts midway.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         SettingSwitchRow(
             label = "Start midway",
-            description = "Begin each video partway through the first time you swipe onto it",
-            checked = settings.playbackStartMode == PlaybackStartMode.START_MIDWAY,
-            onCheckedChange = {
-                settings.updatePlaybackStartMode(
-                    if (it) PlaybackStartMode.START_MIDWAY else PlaybackStartMode.DEFAULT
-                )
-            }
+            description = "Begin partway through when a video has no remembered position",
+            checked = settings.startMidwayEnabled,
+            onCheckedChange = { settings.updateStartMidwayEnabled(it) }
         )
         SettingSwitchRow(
             label = "Remember last position",
             description = "Resume each video where you left off last time",
-            checked = settings.playbackStartMode == PlaybackStartMode.REMEMBER_POSITION,
-            onCheckedChange = {
-                settings.updatePlaybackStartMode(
-                    if (it) PlaybackStartMode.REMEMBER_POSITION else PlaybackStartMode.DEFAULT
-                )
-            }
+            checked = settings.rememberPositionEnabled,
+            onCheckedChange = { settings.updateRememberPositionEnabled(it) }
         )
     }
 }

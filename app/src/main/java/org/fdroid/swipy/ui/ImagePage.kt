@@ -6,6 +6,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -20,6 +21,7 @@ import org.fdroid.swipy.data.MediaItem
 fun ImagePage(
     item: MediaItem,
     likedStore: LikedMediaStore,
+    onShuffleAndRandomStart: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     var showControls by remember(item.uri) { mutableStateOf(false) }
@@ -48,13 +50,25 @@ fun ImagePage(
             )
 
             val isLiked = likedStore.isLiked(item.id)
-            GlassIconButton(
-                icon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
-                contentDescription = if (isLiked) "Unlike" else "Like",
-                tint = if (isLiked) Color(0xFFE0245E) else Color.White,
-                onClick = { likedStore.toggle(item.id) },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
-            )
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 12.dp)
+            ) {
+                GlassIconButton(
+                    icon = if (isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = if (isLiked) "Unlike" else "Like",
+                    tint = if (isLiked) Color(0xFFE0245E) else Color.White,
+                    onClick = { likedStore.toggle(item.id) }
+                )
+                GlassIconButton(
+                    icon = Icons.Default.Shuffle,
+                    contentDescription = "Shuffle and jump to a random item",
+                    onClick = onShuffleAndRandomStart
+                )
+            }
         }
     }
 }
