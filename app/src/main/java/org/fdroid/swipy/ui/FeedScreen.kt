@@ -20,6 +20,15 @@ import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.MediaType
 import org.fdroid.swipy.data.PlaybackPositionStore
 
+/**
+ * VerticalPager needs a bounded page count, so true infinite scrolling isn't
+ * directly supported. The standard workaround: use a huge virtual page count
+ * and map each virtual page to a real item via modulo. With Int.MAX_VALUE
+ * pages and the start centered in the middle, you'd need to swipe billions
+ * of times to hit either edge — effectively infinite for any real session.
+ */
+private const val VIRTUAL_PAGE_COUNT = Int.MAX_VALUE
+
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun FeedScreen(
@@ -39,30 +48,38 @@ fun FeedScreen(
     onShuffleAndRandomStart: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
-    val startPage = remember(items) {
-        items.indexOfFirst { it.id == initialItemId }.let { if (it >= 0) it else 0 }
+    val itemCount = items.size
+
+    val startVirtualPage = remember(items) {
+        if (itemCount == 0) {
+            0
+        } else {
+            val startIndex = items.indexOfFirst { it.id == initialItemId }.let { if (it >= 0) it else 0 }
+            val middle = VIRTUAL_PAGE_COUNT / 2
+            middle - (middle % itemCount) + startIndex
+        }
     }
-    val pagerState = rememberPagerState(initialPage = startPage, pageCount = { items.size })
+    val pagerState = rememberPagerState(
+        initialPage = startVirtualPage,
+        pageCount = { if (itemCount == 0) 0 else VIRTUAL_PAGE_COUNT }
+    )
     val coroutineScope = rememberCoroutineScope()
 
-    // Persist whichever video is currently on screen, so relaunching the app
-    // (or Android backgrounding it mid-swipe, e.g. for split screen) returns
-    // to the same spot instead of resetting to the top.
     LaunchedEffect(pagerState.currentPage, items) {
-        if (items.isNotEmpty()) {
-            onCurrentItemChanged(items[pagerState.currentPage].id)
+        if (itemCount > 0) {
+            onCurrentItemChanged(items[pagerState.currentPage.mod(itemCount)].id)
         }
     }
 
-    // A one-shot "jump here right now" signal, used by the in-feed shuffle
-    // button — an explicit scroll rather than waiting for the pager to
-    // notice initialItemId changed (which it wouldn't, since that only
-    // applies on first composition).
+    // One-shot "jump here right now" signal from the in-feed shuffle button —
+    // jump to the nearest virtual page (relative to where we currently are)
+    // whose modulo lands on the target item.
     LaunchedEffect(jumpToItemId, items) {
-        if (jumpToItemId != null) {
+        if (jumpToItemId != null && itemCount > 0) {
             val index = items.indexOfFirst { it.id == jumpToItemId }
             if (index >= 0) {
-                pagerState.scrollToPage(index)
+                val base = pagerState.currentPage - (pagerState.currentPage.mod(itemCount))
+                pagerState.scrollToPage(base + index)
             }
             onJumpHandled()
         }
@@ -79,9 +96,10 @@ fun FeedScreen(
             VerticalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize()
-            ) { page ->
-                val item = items[page]
-                val isActive = pagerState.currentPage == page
+            ) { virtualPage ->
+                val realIndex = virtualPage.mod(itemCount)
+                val item = items[realIndex]
+                val isActive = pagerState.currentPage == virtualPage
                 when (item.type) {
                     MediaType.IMAGE -> ImagePage(
                         item = item,
@@ -102,10 +120,8 @@ fun FeedScreen(
                         onRandomStartConsumed = onRandomStartConsumed,
                         onShuffleAndRandomStart = onShuffleAndRandomStart,
                         onVideoEnded = {
-                            if (page < items.lastIndex) {
-                                coroutineScope.launch {
-                                    pagerState.animateScrollToPage(page + 1)
-                                }
+                            coroutineScope.launch {
+                                pagerState.animateScrollToPage(virtualPage + 1)
                             }
                         },
                         onOpenSettings = onOpenSettings

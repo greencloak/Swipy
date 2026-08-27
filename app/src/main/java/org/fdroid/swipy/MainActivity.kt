@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
 
             val settings = remember { SettingsRepository(applicationContext) }
 
-            // Force-maximum-brightness setting applies at the window level.
             LaunchedEffect(settings.forceMaxBrightness) {
                 val attrs = window.attributes
                 attrs.screenBrightness = if (settings.forceMaxBrightness) {
@@ -122,10 +121,10 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
     val positionStore = remember { PlaybackPositionStore(context) }
     val likedStore = remember { LikedMediaStore(context) }
 
-    // One-shot signals for the in-feed "shuffle and jump to a random point"
-    // button: which item to scroll to right now, and which item (once it
-    // loads) should start playback from a random position instead of the
-    // usual midway/remember-position logic.
+    // When true, the feed shows only liked items (entered by tapping
+    // something in the Liked gallery) instead of the normal library.
+    var likedFeedActive by remember { mutableStateOf(false) }
+
     var jumpToItemId by remember { mutableStateOf<Long?>(null) }
     var randomStartItemId by remember { mutableStateOf<Long?>(null) }
 
@@ -144,10 +143,18 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
         )
     }
 
+    // Unfiltered library, used to resolve which MediaItems are liked —
+    // shared between the gallery and the liked-only feed mode.
+    val allItemsUnfiltered = remember {
+        repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
+    }
+    val likedItemsList = remember(likedStore.likedIds) {
+        allItemsUnfiltered.filter { likedStore.isLiked(it.id) }
+    }
+
+    val displayedItems = if (likedFeedActive) likedItemsList else items
+
     val onShuffleAndRandomStart: () -> Unit = {
-        // Computed synchronously (not via the `items` remember above, which
-        // only updates after recomposition) so we can pick a random target
-        // from the *new* order immediately.
         val newSeed = System.currentTimeMillis()
         val newItems = repository.loadMedia(
             selectedFolders = settings.selectedFolders,
@@ -167,7 +174,7 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
 
     when (screen) {
         Screen.FEED -> FeedScreen(
-            items = items,
+            items = displayedItems,
             loopEnabled = settings.loopEnabled,
             startMidwayEnabled = settings.startMidwayEnabled,
             rememberPositionEnabled = settings.rememberPositionEnabled,
@@ -181,7 +188,12 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             randomStartItemId = randomStartItemId,
             onRandomStartConsumed = { randomStartItemId = null },
             onShuffleAndRandomStart = onShuffleAndRandomStart,
-            onOpenSettings = { screen = Screen.SETTINGS }
+            onOpenSettings = {
+                // Leaving to Settings always returns to the full library
+                // afterward, rather than staying pinned to liked-only.
+                likedFeedActive = false
+                screen = Screen.SETTINGS
+            }
         )
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
@@ -198,14 +210,12 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             onBack = { screen = Screen.FEED }
         )
         Screen.LIKED_GALLERY -> {
-            val allItems = remember {
-                repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
-            }
-            val likedItems = allItems.filter { likedStore.isLiked(it.id) }
             LikedGalleryScreen(
-                likedItems = likedItems,
+                likedItems = likedItemsList,
                 onItemSelected = { item ->
                     settings.updateLastViewedMediaId(item.id)
+                    likedFeedActive = true
+                    jumpToItemId = item.id
                     screen = Screen.FEED
                 },
                 onBack = { screen = Screen.SETTINGS }

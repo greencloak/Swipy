@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -54,6 +55,10 @@ fun SettingsScreen(
     var query by remember { mutableStateOf("") }
     var showFolderPicker by remember { mutableStateOf(false) }
     var showResetPositionsConfirm by remember { mutableStateOf(false) }
+    var importResultMessage by remember { mutableStateOf<String?>(null) }
+
+    fun readText(uri: Uri): String? =
+        context.contentResolver.openInputStream(uri)?.use { it.readBytes().toString(Charsets.UTF_8) }
 
     val exportSettingsLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -61,6 +66,19 @@ fun SettingsScreen(
         uri?.let {
             context.contentResolver.openOutputStream(it)?.use { stream ->
                 stream.write(settings.exportSettingsJson().toByteArray())
+            }
+        }
+    }
+
+    val importSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            val text = readText(it)
+            importResultMessage = if (text != null && settings.importSettingsJson(text)) {
+                "Settings imported."
+            } else {
+                "Couldn't read that file as Swipy settings."
             }
         }
     }
@@ -73,6 +91,19 @@ fun SettingsScreen(
             val nameLookup: (Long) -> String? = { id -> allItems.firstOrNull { it.id == id }?.displayName }
             context.contentResolver.openOutputStream(it)?.use { stream ->
                 stream.write(likedStore.exportJson(nameLookup).toByteArray())
+            }
+        }
+    }
+
+    val importLikedLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        uri?.let {
+            val text = readText(it)
+            importResultMessage = if (text != null && likedStore.importJson(text)) {
+                "Liked media imported."
+            } else {
+                "Couldn't read that file as Swipy liked media."
             }
         }
     }
@@ -145,6 +176,14 @@ fun SettingsScreen(
                         icon = Icons.Default.Download,
                         onClick = { exportLikedLauncher.launch("swipy-liked.json") }
                     )
+                },
+                SettingRow("Import liked media") {
+                    ClickableSettingRow(
+                        label = "Import liked media",
+                        description = "Merge in likes from a previously exported file",
+                        icon = Icons.Default.Upload,
+                        onClick = { importLikedLauncher.launch(arrayOf("application/json")) }
+                    )
                 }
             )
         ),
@@ -197,6 +236,14 @@ fun SettingsScreen(
                         description = "Save your current settings to a file",
                         icon = Icons.Default.Download,
                         onClick = { exportSettingsLauncher.launch("swipy-settings.json") }
+                    )
+                },
+                SettingRow("Import settings") {
+                    ClickableSettingRow(
+                        label = "Import settings",
+                        description = "Load settings from a previously exported file",
+                        icon = Icons.Default.Upload,
+                        onClick = { importSettingsLauncher.launch(arrayOf("application/json")) }
                     )
                 }
             )
@@ -272,6 +319,17 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showResetPositionsConfirm = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    importResultMessage?.let { message ->
+        AlertDialog(
+            onDismissRequest = { importResultMessage = null },
+            title = { Text("Import") },
+            text = { Text(message) },
+            confirmButton = {
+                TextButton(onClick = { importResultMessage = null }) { Text("OK") }
             }
         )
     }

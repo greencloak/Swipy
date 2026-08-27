@@ -197,6 +197,42 @@ class SettingsRepository(context: Context) {
         return obj.toString(2)
     }
 
+    /** Applies settings previously written by [exportSettingsJson]. Returns false on malformed input. */
+    fun importSettingsJson(json: String): Boolean {
+        return try {
+            val obj = JSONObject(json)
+            updateLoopEnabled(obj.optBoolean("loopEnabled", true))
+            updateForceMaxBrightness(obj.optBoolean("forceMaxBrightness", false))
+            updateThemeMode(
+                runCatching { ThemeMode.valueOf(obj.optString("themeMode", ThemeMode.SYSTEM.name)) }
+                    .getOrDefault(ThemeMode.SYSTEM)
+            )
+            updateAccentColor(obj.optLong("accentColor", ACCENT_COLORS[0]))
+            updateStartMidwayEnabled(obj.optBoolean("startMidwayEnabled", false))
+            updateRememberPositionEnabled(obj.optBoolean("rememberPositionEnabled", false))
+            updateAutoAdvanceEnabled(obj.optBoolean("autoAdvanceEnabled", false))
+            updateSortOrder(
+                runCatching { SortOrder.valueOf(obj.optString("sortOrder", SortOrder.DATE_NEWEST.name)) }
+                    .getOrDefault(SortOrder.DATE_NEWEST)
+            )
+            val folders = obj.optJSONArray("selectedFolders")
+            if (folders != null) {
+                updateSelectedFolders((0 until folders.length()).map { folders.getString(it) }.toSet())
+            }
+            val orientations = obj.optJSONArray("selectedOrientations")
+            if (orientations != null) {
+                updateSelectedOrientations(
+                    (0 until orientations.length())
+                        .mapNotNull { runCatching { Orientation.valueOf(orientations.getString(it)) }.getOrNull() }
+                        .toSet()
+                )
+            }
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     companion object {
         private const val KEY_LOOP = "loop_enabled"
         private const val KEY_BRIGHTNESS = "force_max_brightness"

@@ -1,6 +1,12 @@
 package org.fdroid.swipy.ui
 
 import android.view.ViewGroup
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.*
@@ -11,6 +17,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,6 +40,10 @@ import org.fdroid.swipy.data.PlaybackPositionStore
 /** Touch must be held this long before it counts as "hold to pause" — a quick
  *  tap (to open the overlay) never pauses the video at all. */
 private const val HOLD_TO_PAUSE_THRESHOLD_MS = 150L
+
+/** How long after a single tap we wait to see if a second tap follows,
+ *  before committing to "single tap" behavior (open the overlay). */
+private const val DOUBLE_TAP_WINDOW_MS = 250L
 
 @Composable
 fun VideoPage(
@@ -66,6 +77,16 @@ fun VideoPage(
 
     var isPlaying by remember(item.uri) { mutableStateOf(true) }
     var showControls by remember(item.uri) { mutableStateOf(false) }
+    var showHeartBurst by remember { mutableStateOf(false) }
+    var heartBurstTrigger by remember { mutableStateOf(0) }
+
+    LaunchedEffect(heartBurstTrigger) {
+        if (heartBurstTrigger > 0) {
+            showHeartBurst = true
+            delay(650)
+            showHeartBurst = false
+        }
+    }
 
     var durationMs by remember(item.uri) { mutableStateOf(0L) }
     var positionMs by remember(item.uri) { mutableStateOf(0L) }
@@ -135,18 +156,12 @@ fun VideoPage(
                 val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    val wasPlayingAtStart = isPlaying
                     val startTime = System.currentTimeMillis()
                     var pointerId = down.id
 
-                    // Race three outcomes at once: a quick release (tap), the
-                    // finger moving beyond touch slop (a swipe — bail out and
-                    // let the pager handle it entirely), or the threshold
-                    // elapsing with no release/movement (a genuine hold).
-                    // Previously this only raced on time, so a fast swipe that
-                    // happened to finish within the threshold got misread as
-                    // a tap and toggled the overlay mid-swipe, fighting the
-                    // pager. Checking distance fixes that.
+                    // Race: quick release (tap), movement beyond slop (a swipe
+                    // — bail out entirely so the pager handles it), or the
+                    // threshold elapsing with no release/movement (a hold).
                     var outcome = "hold"
                     while (true) {
                         val elapsed = System.currentTimeMillis() - startTime
@@ -163,7 +178,7 @@ fun VideoPage(
                         }
                         val change = event.changes.firstOrNull { it.id == pointerId }
                         if (change == null) {
-                            outcome = "swipe" // pointer tracking lost — don't guess, let it go
+                            outcome = "swipe"
                             break
                         }
                         if (change.isConsumed) {
@@ -185,15 +200,36 @@ fun VideoPage(
                     }
 
                     when (outcome) {
-                        "tap" -> showControls = !showControls
+                        "tap" -> {
+                            // Wait briefly for a possible second tap (double-tap
+                            // to like) before committing to "single tap opens
+                            // the overlay".
+                            val gotSecondTap = try {
+                                withTimeout(DOUBLE_TAP_WINDOW_MS) { awaitSecondTapDown() }
+                            } catch (e: TimeoutCancellationException) {
+                                false
+                            }
+                            if (gotSecondTap) {
+                                likedStore.toggle(item.id)
+                                heartBurstTrigger++
+                            } else {
+                                showControls = !showControls
+                            }
+                        }
                         "swipe", "consumed" -> { /* let the pager / seek bar handle it entirely */ }
                         "hold" -> {
-                            if (wasPlayingAtStart) {
+                            // Query the player directly rather than trusting our
+                            // cached `isPlaying` — that value could occasionally
+                            // drift from reality (e.g. right as a video ends or
+                            // the pager settles), which was causing hold-to-pause
+                            // to silently do nothing on some attempts.
+                            val wasActuallyPlaying = player.isPlaying
+                            if (wasActuallyPlaying) {
                                 player.pause()
                                 isPlaying = false
                             }
                             awaitReleaseOrConsumption(pointerId)
-                            if (wasPlayingAtStart) {
+                            if (wasActuallyPlaying) {
                                 player.play()
                                 isPlaying = true
                             }
@@ -215,6 +251,20 @@ fun VideoPage(
                 }
             }
         )
+
+        AnimatedVisibility(
+            visible = showHeartBurst,
+            enter = scaleIn(animationSpec = tween(200)) + fadeIn(animationSpec = tween(150)),
+            exit = fadeOut(animationSpec = tween(300)),
+            modifier = Modifier.align(Alignment.Center)
+        ) {
+            Icon(
+                Icons.Default.Favorite,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.size(110.dp)
+            )
+        }
 
         if (showControls) {
             GlassIconButton(
@@ -298,5 +348,17 @@ private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.awa
             return true
         }
         id = change.id
+    }
+}
+
+/** Watches for a brand-new finger touching down (a second tap) and consumes it. */
+private suspend fun androidx.compose.ui.input.pointer.AwaitPointerEventScope.awaitSecondTapDown(): Boolean {
+    while (true) {
+        val event = awaitPointerEvent()
+        val newDown = event.changes.firstOrNull { it.pressed && !it.previousPressed }
+        if (newDown != null) {
+            newDown.consume()
+            return true
+        }
     }
 }

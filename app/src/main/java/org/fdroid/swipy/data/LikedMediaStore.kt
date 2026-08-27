@@ -35,6 +35,21 @@ class LikedMediaStore(context: Context) {
         return array.toString(2)
     }
 
+    /** Merges ids from a previously exported liked-media file into the current liked set. */
+    fun importJson(json: String): Boolean {
+        return try {
+            val array = org.json.JSONArray(json)
+            val importedIds = (0 until array.length()).mapNotNull { i ->
+                array.optJSONObject(i)?.optLong("id")
+            }.toSet()
+            likedIds = likedIds + importedIds
+            prefs.edit().putStringSet(KEY_LIKED, likedIds.map { it.toString() }.toSet()).apply()
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     companion object {
         private const val KEY_LIKED = "liked_ids"
     }
