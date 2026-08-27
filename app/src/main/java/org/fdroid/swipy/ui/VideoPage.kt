@@ -7,6 +7,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.*
@@ -204,6 +206,19 @@ fun VideoPage(
                     contentDescription = if (isLiked) "Unlike" else "Like",
                     tint = if (isLiked) Color(0xFFE0245E) else Color.White,
                     onClick = { likedStore.toggle(item.id) }
+                )
+                GlassIconButton(
+                    icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    onClick = {
+                        if (isPlaying) {
+                            player.pause()
+                            isPlaying = false
+                        } else {
+                            player.play()
+                            isPlaying = true
+                        }
+                    }
                 )
                 GlassIconButton(
                     icon = Icons.Default.Shuffle,

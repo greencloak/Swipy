@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -20,17 +21,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
-import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 
 /**
  * A minimal seek bar with no visible thumb — just a mostly-solid (~90%
- * opaque) filled track. The bottom ~13% of the video is always an active
- * drag/tap zone for seeking, whether or not the rest of the controls are
- * showing, so scrubbing doesn't require opening the overlay first. While
- * actively scrubbing, the bar rises 5% of the screen height (matching
- * Instagram's reel scrubber) so it isn't hidden under your thumb.
+ * opaque) filled track. The bottom ~13% of the video is an active zone for
+ * seeking, whether or not the rest of the controls are showing — but it only
+ * claims genuinely horizontal drags. A vertical swipe that happens to start
+ * in that zone (very common near the bottom of the screen) is left alone so
+ * it still reaches the pager to swipe to the next video. While actively
+ * scrubbing, the bar rises 5% of the screen height (matching Instagram's
+ * reel scrubber) so it isn't hidden under your thumb.
  */
 @Composable
 fun GlassSeekBar(
@@ -59,15 +62,47 @@ fun GlassSeekBar(
             .onSizeChanged { barWidthPx = it.width.toFloat() }
             .pointerInput(durationMs) {
                 if (durationMs <= 0) return@pointerInput
+                val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
-                    isSeeking = true
-                    if (barWidthPx > 0) {
-                        val frac = (down.position.x / barWidthPx).coerceIn(0f, 1f)
-                        lastComputedMs = (frac * durationMs).toLong()
-                        onSeekChange(lastComputedMs)
-                    }
                     var pointerId = down.id
+                    var directionDecided = false
+                    var isHorizontalDrag = false
+
+                    // Phase 1: don't claim anything yet — just watch until the
+                    // drag is clearly horizontal (a seek) or vertical (a swipe,
+                    // which we leave completely alone for the pager to handle).
+                    while (!directionDecided) {
+                        val event = awaitPointerEvent()
+                        val change = event.changes.firstOrNull { it.id == pointerId } ?: return@awaitEachGesture
+                        if (!change.pressed) {
+                            // Released without moving much — treat as a tap-to-seek.
+                            isSeeking = true
+                            if (barWidthPx > 0) {
+                                val frac = (down.position.x / barWidthPx).coerceIn(0f, 1f)
+                                lastComputedMs = (frac * durationMs).toLong()
+                                onSeekChange(lastComputedMs)
+                            }
+                            isSeeking = false
+                            onSeekFinished(lastComputedMs)
+                            return@awaitEachGesture
+                        }
+                        val dx = change.position.x - down.position.x
+                        val dy = change.position.y - down.position.y
+                        if (abs(dx) > slop || abs(dy) > slop) {
+                            directionDecided = true
+                            isHorizontalDrag = abs(dx) > abs(dy)
+                        }
+                        pointerId = change.id
+                    }
+
+                    if (!isHorizontalDrag) {
+                        // Vertical swipe — don't consume anything, let the pager see it.
+                        return@awaitEachGesture
+                    }
+
+                    // Phase 2: genuinely horizontal — now actively scrub.
+                    isSeeking = true
                     while (true) {
                         val event = awaitPointerEvent()
                         val change = event.changes.firstOrNull { it.id == pointerId } ?: break
