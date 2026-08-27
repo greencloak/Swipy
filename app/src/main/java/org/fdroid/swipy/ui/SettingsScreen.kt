@@ -32,13 +32,7 @@ private data class SettingSection(val title: String, val rows: List<SettingRow>)
 @Composable
 fun SettingsScreen(
     settings: SettingsRepository,
-    sortOrder: SortOrder,
-    onSortChange: (SortOrder) -> Unit,
     allFolders: List<String>,
-    selectedFolders: Set<String>,
-    onFoldersChange: (Set<String>) -> Unit,
-    selectedOrientations: Set<Orientation>,
-    onOrientationsChange: (Set<Orientation>) -> Unit,
     onShuffleNow: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -86,13 +80,13 @@ fun SettingsScreen(
                 SettingRow("Select folders") {
                     ClickableSettingRow(
                         label = "Select folders",
-                        description = if (selectedFolders.isEmpty()) "All folders" else "${selectedFolders.size} selected",
+                        description = if (settings.selectedFolders.isEmpty()) "All folders" else "${settings.selectedFolders.size} selected",
                         onClick = { showFolderPicker = true }
                     )
                 },
-                SettingRow("Sort order") { SortOrderRow(sortOrder, onSortChange) },
+                SettingRow("Sort order") { SortOrderRow(settings.sortOrder) { settings.updateSortOrder(it) } },
                 SettingRow("Filter by shape") {
-                    OrientationFilterRow(selectedOrientations, onOrientationsChange)
+                    OrientationFilterRow(settings.selectedOrientations) { settings.updateSelectedOrientations(it) }
                 },
                 SettingRow("Shuffle now") {
                     ClickableSettingRow(
@@ -153,9 +147,9 @@ fun SettingsScreen(
     if (showFolderPicker) {
         FolderPickerScreen(
             allFolders = allFolders,
-            selectedFolders = selectedFolders,
+            selectedFolders = settings.selectedFolders,
             onConfirm = {
-                onFoldersChange(it)
+                settings.updateSelectedFolders(it)
                 showFolderPicker = false
             },
             onDismiss = { showFolderPicker = false }

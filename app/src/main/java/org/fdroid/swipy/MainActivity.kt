@@ -15,7 +15,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import org.fdroid.swipy.data.MediaRepository
-import org.fdroid.swipy.data.Orientation
 import org.fdroid.swipy.data.PlaybackPositionStore
 import org.fdroid.swipy.data.SettingsRepository
 import org.fdroid.swipy.data.SortOrder
@@ -116,17 +115,18 @@ private fun PermissionRequestScreen(onRequest: () -> Unit) {
 
 @Composable
 private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) {
+    // Only `screen` (which page you're on) and `refreshKey` (a one-off shuffle
+    // trigger) stay as plain in-memory state — everything that should survive
+    // the app being backgrounded (filters, sort, current video) now lives in
+    // `settings`, which is backed by SharedPreferences.
     var screen by remember { mutableStateOf(Screen.FEED) }
-    var sortOrder by remember { mutableStateOf(SortOrder.DATE_NEWEST) }
-    var selectedFolders by remember { mutableStateOf(setOf<String>()) }
-    var selectedOrientations by remember { mutableStateOf(setOf<Orientation>()) }
     var refreshKey by remember { mutableIntStateOf(0) }
     val context = androidx.compose.ui.platform.LocalContext.current
     val positionStore = remember { PlaybackPositionStore(context) }
 
     val allFolders = remember { repository.listFolders() }
-    val items = remember(sortOrder, selectedFolders, selectedOrientations, refreshKey) {
-        repository.loadMedia(selectedFolders, sortOrder, selectedOrientations)
+    val items = remember(settings.sortOrder, settings.selectedFolders, settings.selectedOrientations, refreshKey) {
+        repository.loadMedia(settings.selectedFolders, settings.sortOrder, settings.selectedOrientations)
     }
 
     when (screen) {
@@ -135,19 +135,15 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             loopEnabled = settings.loopEnabled,
             playbackStartMode = settings.playbackStartMode,
             positionStore = positionStore,
+            initialItemId = settings.lastViewedMediaId,
+            onCurrentItemChanged = { settings.updateLastViewedMediaId(it) },
             onOpenSettings = { screen = Screen.SETTINGS }
         )
         Screen.SETTINGS -> SettingsScreen(
             settings = settings,
-            sortOrder = sortOrder,
-            onSortChange = { sortOrder = it },
             allFolders = allFolders,
-            selectedFolders = selectedFolders,
-            onFoldersChange = { selectedFolders = it },
-            selectedOrientations = selectedOrientations,
-            onOrientationsChange = { selectedOrientations = it },
             onShuffleNow = {
-                sortOrder = SortOrder.RANDOM
+                settings.updateSortOrder(SortOrder.RANDOM)
                 refreshKey++
                 screen = Screen.FEED
             },

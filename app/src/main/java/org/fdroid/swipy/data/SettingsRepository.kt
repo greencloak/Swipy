@@ -29,6 +29,12 @@ val ACCENT_COLORS = listOf(
 /**
  * Wraps SharedPreferences and exposes each setting as Compose state, so any
  * screen reading these properties recomposes automatically when they change.
+ *
+ * Everything here — including folder/sort/shape filters and the current
+ * scroll position — is written to disk immediately, so Android backgrounding
+ * or resizing the app (e.g. split screen) never resets it. Previously the
+ * feed's filters and position lived only in in-memory Compose state, which
+ * Android is free to wipe whenever the app leaves the foreground.
  */
 class SettingsRepository(context: Context) {
     private val prefs = context.getSharedPreferences("swipy_settings", Context.MODE_PRIVATE)
@@ -52,6 +58,27 @@ class SettingsRepository(context: Context) {
             prefs.getString(KEY_PLAYBACK_START_MODE, PlaybackStartMode.DEFAULT.name) ?: PlaybackStartMode.DEFAULT.name
         )
     )
+        private set
+
+    var selectedFolders by mutableStateOf(
+        (prefs.getStringSet(KEY_FOLDERS, emptySet()) ?: emptySet()).toSet()
+    )
+        private set
+
+    var sortOrder by mutableStateOf(
+        SortOrder.valueOf(prefs.getString(KEY_SORT_ORDER, SortOrder.DATE_NEWEST.name) ?: SortOrder.DATE_NEWEST.name)
+    )
+        private set
+
+    var selectedOrientations by mutableStateOf(
+        (prefs.getStringSet(KEY_ORIENTATIONS, emptySet()) ?: emptySet())
+            .mapNotNull { runCatching { Orientation.valueOf(it) }.getOrNull() }
+            .toSet()
+    )
+        private set
+
+    /** The media id last visible in the feed, so we can jump back to it on relaunch. */
+    var lastViewedMediaId by mutableStateOf(prefs.getLong(KEY_LAST_VIEWED, -1L))
         private set
 
     fun updateLoopEnabled(value: Boolean) {
@@ -79,11 +106,35 @@ class SettingsRepository(context: Context) {
         prefs.edit().putString(KEY_PLAYBACK_START_MODE, mode.name).apply()
     }
 
+    fun updateSelectedFolders(folders: Set<String>) {
+        selectedFolders = folders
+        prefs.edit().putStringSet(KEY_FOLDERS, folders).apply()
+    }
+
+    fun updateSortOrder(order: SortOrder) {
+        sortOrder = order
+        prefs.edit().putString(KEY_SORT_ORDER, order.name).apply()
+    }
+
+    fun updateSelectedOrientations(orientations: Set<Orientation>) {
+        selectedOrientations = orientations
+        prefs.edit().putStringSet(KEY_ORIENTATIONS, orientations.map { it.name }.toSet()).apply()
+    }
+
+    fun updateLastViewedMediaId(id: Long) {
+        lastViewedMediaId = id
+        prefs.edit().putLong(KEY_LAST_VIEWED, id).apply()
+    }
+
     companion object {
         private const val KEY_LOOP = "loop_enabled"
         private const val KEY_BRIGHTNESS = "force_max_brightness"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_ACCENT = "accent_color"
         private const val KEY_PLAYBACK_START_MODE = "playback_start_mode"
+        private const val KEY_FOLDERS = "selected_folders"
+        private const val KEY_SORT_ORDER = "sort_order"
+        private const val KEY_ORIENTATIONS = "selected_orientations"
+        private const val KEY_LAST_VIEWED = "last_viewed_media_id"
     }
 }
