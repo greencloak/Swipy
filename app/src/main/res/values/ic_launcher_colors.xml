@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches Theme.Swipy's black windowBackground rather than the
+         in-app accent color, since a launcher icon is a static resource
+         and can't read the user's Settings-selected accent at runtime. -->
+    <color name="ic_launcher_background">#121212</color>
+</resources>
