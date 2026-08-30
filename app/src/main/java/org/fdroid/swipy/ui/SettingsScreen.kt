@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Search
@@ -48,6 +49,7 @@ fun SettingsScreen(
     repository: MediaRepository,
     allFolders: List<String>,
     onShuffleNow: () -> Unit,
+    onManualRefresh: () -> Unit,
     onOpenLikedGallery: () -> Unit,
     onBack: () -> Unit
 ) {
@@ -200,6 +202,14 @@ fun SettingsScreen(
                 SettingRow("Sort order") { SortOrderRow(settings.sortOrder) { settings.updateSortOrder(it) } },
                 SettingRow("Filter by shape") {
                     OrientationFilterRow(settings.selectedOrientations) { settings.updateSelectedOrientations(it) }
+                },
+                SettingRow("Refresh library") {
+                    ClickableSettingRow(
+                        label = "Refresh library",
+                        description = "Re-scan MediaStore now for new or changed photos and videos",
+                        icon = Icons.Default.Refresh,
+                        onClick = onManualRefresh
+                    )
                 },
                 SettingRow("Shuffle now") {
                     ClickableSettingRow(

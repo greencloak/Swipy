@@ -8,8 +8,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -37,6 +40,7 @@ fun FeedScreen(
     randomStartItemId: Long?,
     onRandomStartConsumed: () -> Unit,
     onShuffleAndRandomStart: () -> Unit,
+    onRefresh: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val startPage = remember(items) {
@@ -45,9 +49,30 @@ fun FeedScreen(
     val pagerState = rememberPagerState(initialPage = startPage, pageCount = { items.size })
     val coroutineScope = rememberCoroutineScope()
 
+    // Tracks whatever item is currently on screen, independent of its index —
+    // used below to re-anchor the pager if a refresh reorders the list
+    // (e.g. a newly-synced photo pushes everything after it down by one).
+    var currentItemId by remember { mutableStateOf<Long?>(null) }
+
     LaunchedEffect(pagerState.currentPage, items) {
         if (items.isNotEmpty()) {
-            onCurrentItemChanged(items[pagerState.currentPage].id)
+            val item = items[pagerState.currentPage]
+            currentItemId = item.id
+            onCurrentItemChanged(item.id)
+        }
+    }
+
+    // Self-correct position when the item list changes out from under us —
+    // most notably a ContentObserver-triggered refresh — but never fight an
+    // in-progress swipe: if the user is actively dragging, skip this pass.
+    // `items` is already correct at that point, just possibly at a different
+    // index than before; the next stable frame stays internally consistent.
+    LaunchedEffect(items) {
+        val targetId = currentItemId ?: return@LaunchedEffect
+        if (pagerState.isScrollInProgress) return@LaunchedEffect
+        val newIndex = items.indexOfFirst { it.id == targetId }
+        if (newIndex >= 0 && newIndex != pagerState.currentPage) {
+            pagerState.scrollToPage(newIndex)
         }
     }
 
@@ -80,6 +105,7 @@ fun FeedScreen(
                         item = item,
                         likedStore = likedStore,
                         onShuffleAndRandomStart = onShuffleAndRandomStart,
+                        onRefresh = onRefresh,
                         onOpenSettings = onOpenSettings
                     )
                     MediaType.VIDEO -> VideoPage(
@@ -101,6 +127,7 @@ fun FeedScreen(
                                 }
                             }
                         },
+                        onRefresh = onRefresh,
                         onOpenSettings = onOpenSettings
                     )
                 }

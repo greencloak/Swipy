@@ -1,8 +1,11 @@
 package org.fdroid.swipy
 
 import android.Manifest
+import android.database.ContentObserver
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -13,8 +16,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.fdroid.swipy.data.LikedMediaStore
+import org.fdroid.swipy.data.MediaItem
 import org.fdroid.swipy.data.MediaRepository
 import org.fdroid.swipy.data.PlaybackPositionStore
 import org.fdroid.swipy.data.SettingsRepository
@@ -120,6 +132,7 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
     val context = androidx.compose.ui.platform.LocalContext.current
     val positionStore = remember { PlaybackPositionStore(context) }
     val likedStore = remember { LikedMediaStore(context) }
+    val coroutineScope = rememberCoroutineScope()
 
     // When true, the feed shows only liked items (entered by tapping
     // something in the Liked gallery) instead of the normal library.
@@ -129,26 +142,88 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
     var randomStartItemId by remember { mutableStateOf<Long?>(null) }
 
     val allFolders = remember { repository.listFolders() }
-    val items = remember(
+
+    // Bumped whenever MediaStore reports a change (via the ContentObserver
+    // below, debounced) or the user taps a manual refresh action. Used as a
+    // LaunchedEffect key so both `items` and `allItemsUnfiltered` re-query
+    // MediaStore without requiring an app restart.
+    var mediaChangeTick by remember { mutableStateOf(0L) }
+
+    // Registers a single ContentObserver spanning both the Images and Video
+    // collections while the app is in the foreground (ON_START/ON_STOP) —
+    // Swipy does no background work, so there's nothing to gain from eating
+    // change notifications the user can't see. Bursts of onChange callbacks
+    // (e.g. a sync app writing many files back-to-back) are debounced by
+    // 500ms so a batch import triggers exactly one refresh, not one per file.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, repository) {
+        var observer: ContentObserver? = null
+        var debounceJob: Job? = null
+
+        val lifecycleObserver = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> {
+                    observer = repository.registerChangeObserver(Handler(Looper.getMainLooper())) {
+                        debounceJob?.cancel()
+                        debounceJob = coroutineScope.launch {
+                            delay(500)
+                            mediaChangeTick = System.currentTimeMillis()
+                        }
+                    }
+                }
+                Lifecycle.Event.ON_STOP -> {
+                    observer?.let { repository.unregisterChangeObserver(it) }
+                    observer = null
+                    debounceJob?.cancel()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(lifecycleObserver)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(lifecycleObserver)
+            observer?.let { repository.unregisterChangeObserver(it) }
+            debounceJob?.cancel()
+        }
+    }
+
+    // Manual refresh: user-initiated, so it skips the debounce entirely and
+    // triggers an immediate reload.
+    val onManualRefresh: () -> Unit = { mediaChangeTick = System.currentTimeMillis() }
+
+    // MediaStore queries now run off the main thread — with a ContentObserver
+    // able to trigger a reload at any time, a synchronous query here would
+    // risk a dropped frame right as the user is mid-swipe.
+    var items by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    LaunchedEffect(
         settings.sortOrder,
         settings.selectedFolders,
         settings.selectedOrientations,
-        settings.shuffleSeed
+        settings.shuffleSeed,
+        mediaChangeTick
     ) {
-        repository.loadMedia(
-            selectedFolders = settings.selectedFolders,
-            sortOrder = settings.sortOrder,
-            selectedOrientations = settings.selectedOrientations,
-            shuffleSeed = settings.shuffleSeed
-        )
+        items = withContext(Dispatchers.IO) {
+            repository.loadMedia(
+                selectedFolders = settings.selectedFolders,
+                sortOrder = settings.sortOrder,
+                selectedOrientations = settings.selectedOrientations,
+                shuffleSeed = settings.shuffleSeed
+            )
+        }
     }
 
     // Unfiltered library, used to resolve which MediaItems are liked —
-    // shared between the gallery and the liked-only feed mode.
-    val allItemsUnfiltered = remember {
-        repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
+    // shared between the gallery and the liked-only feed mode. Re-queried on
+    // the same mediaChangeTick as `items` so newly-added media resolves here
+    // too (e.g. liking something you just synced onto the device).
+    var allItemsUnfiltered by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    LaunchedEffect(mediaChangeTick) {
+        allItemsUnfiltered = withContext(Dispatchers.IO) {
+            repository.loadMedia(emptySet(), SortOrder.DATE_NEWEST, emptySet())
+        }
     }
-    val likedItemsList = remember(likedStore.likedIds) {
+
+    val likedItemsList = remember(likedStore.likedIds, allItemsUnfiltered) {
         allItemsUnfiltered.filter { likedStore.isLiked(it.id) }
     }
 
@@ -156,19 +231,23 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
 
     val onShuffleAndRandomStart: () -> Unit = {
         val newSeed = System.currentTimeMillis()
-        val newItems = repository.loadMedia(
-            selectedFolders = settings.selectedFolders,
-            sortOrder = SortOrder.RANDOM,
-            selectedOrientations = settings.selectedOrientations,
-            shuffleSeed = newSeed
-        )
-        settings.updateShuffleSeed(newSeed)
-        settings.updateSortOrder(SortOrder.RANDOM)
-        val target = newItems.randomOrNull()
-        if (target != null) {
-            jumpToItemId = target.id
-            randomStartItemId = target.id
-            settings.updateLastViewedMediaId(target.id)
+        coroutineScope.launch {
+            val newItems = withContext(Dispatchers.IO) {
+                repository.loadMedia(
+                    selectedFolders = settings.selectedFolders,
+                    sortOrder = SortOrder.RANDOM,
+                    selectedOrientations = settings.selectedOrientations,
+                    shuffleSeed = newSeed
+                )
+            }
+            settings.updateShuffleSeed(newSeed)
+            settings.updateSortOrder(SortOrder.RANDOM)
+            val target = newItems.randomOrNull()
+            if (target != null) {
+                jumpToItemId = target.id
+                randomStartItemId = target.id
+                settings.updateLastViewedMediaId(target.id)
+            }
         }
     }
 
@@ -188,6 +267,7 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
             randomStartItemId = randomStartItemId,
             onRandomStartConsumed = { randomStartItemId = null },
             onShuffleAndRandomStart = onShuffleAndRandomStart,
+            onRefresh = onManualRefresh,
             onOpenSettings = {
                 // Leaving to Settings always returns to the full library
                 // afterward, rather than staying pinned to liked-only.
@@ -206,6 +286,7 @@ private fun SwipyApp(repository: MediaRepository, settings: SettingsRepository) 
                 settings.updateSortOrder(SortOrder.RANDOM)
                 screen = Screen.FEED
             },
+            onManualRefresh = onManualRefresh,
             onOpenLikedGallery = { screen = Screen.LIKED_GALLERY },
             onBack = { screen = Screen.FEED }
         )

@@ -2,6 +2,8 @@ package org.fdroid.swipy.data
 
 import android.content.ContentUris
 import android.content.Context
+import android.database.ContentObserver
+import android.os.Handler
 import android.provider.MediaStore
 
 /**
@@ -100,5 +102,39 @@ class MediaRepository(private val context: Context) {
             }
         }
         return items
+    }
+
+    /**
+     * Registers a single [ContentObserver] against both the images and video
+     * MediaStore collections, so [onChange] fires whenever media anywhere in
+     * either collection is inserted, updated, or deleted — including by
+     * other apps (e.g. a file-sync client writing into a scanned folder).
+     *
+     * [handler] determines which thread onChange() callbacks are delivered
+     * on; pass a Handler bound to the main Looper so callers can safely
+     * touch Compose state directly from [onChange].
+     *
+     * The caller owns the returned ContentObserver's lifecycle and must
+     * pass it to [unregisterChangeObserver] when done, or it will leak past
+     * whatever component registered it.
+     */
+    fun registerChangeObserver(handler: Handler, onChange: () -> Unit): ContentObserver {
+        val observer = object : ContentObserver(handler) {
+            override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
+                onChange()
+            }
+        }
+        context.contentResolver.registerContentObserver(
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer
+        )
+        context.contentResolver.registerContentObserver(
+            MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, observer
+        )
+        return observer
+    }
+
+    /** Unregisters an observer previously returned by [registerChangeObserver]. */
+    fun unregisterChangeObserver(observer: ContentObserver) {
+        context.contentResolver.unregisterContentObserver(observer)
     }
 }

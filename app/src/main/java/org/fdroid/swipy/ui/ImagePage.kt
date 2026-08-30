@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.runtime.*
@@ -22,6 +23,7 @@ fun ImagePage(
     item: MediaItem,
     likedStore: LikedMediaStore,
     onShuffleAndRandomStart: () -> Unit,
+    onRefresh: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     var showControls by remember(item.uri) { mutableStateOf(false) }
@@ -42,12 +44,21 @@ fun ImagePage(
         )
 
         if (showControls) {
-            GlassIconButton(
-                icon = Icons.Default.Settings,
-                contentDescription = "Settings",
-                onClick = onOpenSettings,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
-            )
+            ) {
+                GlassIconButton(
+                    icon = Icons.Default.Refresh,
+                    contentDescription = "Refresh library",
+                    onClick = onRefresh
+                )
+                GlassIconButton(
+                    icon = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    onClick = onOpenSettings
+                )
+            }
 
             val isLiked = likedStore.isLiked(item.id)
             Column(

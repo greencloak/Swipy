@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Icon
@@ -49,6 +50,7 @@ fun VideoPage(
     onRandomStartConsumed: () -> Unit,
     onShuffleAndRandomStart: () -> Unit,
     onVideoEnded: () -> Unit,
+    onRefresh: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     val context = LocalContext.current
@@ -218,12 +220,21 @@ fun VideoPage(
         )
 
         if (showControls) {
-            GlassIconButton(
-                icon = Icons.Default.Settings,
-                contentDescription = "Settings",
-                onClick = onOpenSettings,
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)
-            )
+            ) {
+                GlassIconButton(
+                    icon = Icons.Default.Refresh,
+                    contentDescription = "Refresh library",
+                    onClick = onRefresh
+                )
+                GlassIconButton(
+                    icon = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    onClick = onOpenSettings
+                )
+            }
         }
 
         val isLiked = likedStore.isLiked(item.id)
