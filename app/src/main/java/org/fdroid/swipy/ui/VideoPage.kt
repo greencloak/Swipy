@@ -3,6 +3,8 @@ package org.fdroid.swipy.ui
 import android.view.ViewGroup
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
@@ -16,9 +18,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import kotlinx.coroutines.TimeoutCancellationException
@@ -35,6 +42,9 @@ import org.fdroid.swipy.data.PlaybackPositionStore
 /** Touch must be held this long before it counts as "hold to pause" — a quick
  *  tap (to open the overlay) never pauses the video at all. */
 private const val HOLD_TO_PAUSE_THRESHOLD_MS = 150L
+
+/** Two taps within this window count as a double-tap-to-zoom, not two single taps. */
+private const val DOUBLE_TAP_WINDOW_MS = 300L
 
 @Composable
 fun VideoPage(
@@ -73,6 +83,10 @@ fun VideoPage(
     var durationMs by remember(item.uri) { mutableStateOf(0L) }
     var positionMs by remember(item.uri) { mutableStateOf(0L) }
     var isUserSeeking by remember { mutableStateOf(false) }
+
+    val zoomState = remember(item.uri) { ZoomPanState() }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    var lastTapTime by remember(item.uri) { mutableStateOf(0L) }
 
     LaunchedEffect(isActive) {
         if (isActive) {
@@ -134,6 +148,7 @@ fun VideoPage(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onSizeChanged { containerSize = it }
             .pointerInput(item.uri) {
                 val slop = viewConfiguration.touchSlop
                 awaitEachGesture {
@@ -141,10 +156,13 @@ fun VideoPage(
                     val startTime = System.currentTimeMillis()
                     var pointerId = down.id
 
-                    // Race: quick release (tap), movement beyond slop (a swipe
-                    // — bail out entirely so the pager handles it), or the
+                    // Race: quick release (tap), a second finger joining
+                    // (pinch), movement beyond slop (a swipe when not
+                    // zoomed, or a pan when zoomed in — bail out entirely
+                    // for a plain swipe so the pager handles it), or the
                     // threshold elapsing with no release/movement (a hold).
                     var outcome = "hold"
+                    var panStartDelta = Offset.Zero
                     while (true) {
                         val elapsed = System.currentTimeMillis() - startTime
                         val remaining = HOLD_TO_PAUSE_THRESHOLD_MS - elapsed
@@ -156,6 +174,10 @@ fun VideoPage(
                             withTimeout(remaining) { awaitPointerEvent() }
                         } catch (e: TimeoutCancellationException) {
                             outcome = "hold"
+                            break
+                        }
+                        if (event.changes.count { it.pressed } >= 2) {
+                            outcome = "pinch"
                             break
                         }
                         val change = event.changes.firstOrNull { it.id == pointerId }
@@ -175,15 +197,62 @@ fun VideoPage(
                         val dx = change.position.x - down.position.x
                         val dy = change.position.y - down.position.y
                         if (dx * dx + dy * dy > slop * slop) {
-                            outcome = "swipe"
+                            if (zoomState.isZoomed) {
+                                outcome = "pan"
+                                panStartDelta = Offset(dx, dy)
+                            } else {
+                                outcome = "swipe"
+                            }
                             break
                         }
                         pointerId = change.id
                     }
 
                     when (outcome) {
-                        "tap" -> showControls = !showControls
+                        "tap" -> {
+                            val now = System.currentTimeMillis()
+                            if (now - lastTapTime < DOUBLE_TAP_WINDOW_MS) {
+                                zoomState.onDoubleTap()
+                                lastTapTime = 0L
+                            } else {
+                                showControls = !showControls
+                                lastTapTime = now
+                            }
+                        }
                         "swipe", "consumed" -> { /* let the pager / seek bar handle it entirely */ }
+                        "pinch" -> {
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val pressed = event.changes.filter { it.pressed }
+                                if (pressed.isEmpty()) break
+                                if (pressed.size >= 2) {
+                                    val zoomChange = event.calculateZoom()
+                                    val panChange = event.calculatePan()
+                                    zoomState.onTransform(containerSize, panChange, zoomChange)
+                                    event.changes.forEach { it.consume() }
+                                } else if (zoomState.isZoomed) {
+                                    // Down to one finger but still zoomed — keep panning.
+                                    val change = pressed.first()
+                                    zoomState.onPan(containerSize, change.positionChange())
+                                    change.consume()
+                                }
+                            }
+                        }
+                        "pan" -> {
+                            zoomState.onPan(containerSize, panStartDelta)
+                            var panPointerId = pointerId
+                            while (true) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull { it.id == panPointerId } ?: break
+                                if (!change.pressed) {
+                                    change.consume()
+                                    break
+                                }
+                                zoomState.onPan(containerSize, change.positionChange())
+                                change.consume()
+                                panPointerId = change.id
+                            }
+                        }
                         "hold" -> {
                             // Query the player directly rather than trusting our
                             // cached `isPlaying` — that value could occasionally
@@ -206,7 +275,14 @@ fun VideoPage(
             }
     ) {
         AndroidView(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = zoomState.scale
+                    scaleY = zoomState.scale
+                    translationX = zoomState.offsetX
+                    translationY = zoomState.offsetY
+                },
             factory = {
                 PlayerView(context).apply {
                     useController = false
